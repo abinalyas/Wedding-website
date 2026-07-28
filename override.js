@@ -90,8 +90,14 @@
     // grouped one level up. Clone that whole group, not just the text,
     // or the reception copy renders as plain text with no button chrome.
     var mapWrapper = mapTextWrapper ? positionedWrapper(mapTextWrapper.parentElement) : null;
-    var photoImg = document.querySelector('img[src*="c852da63dec521c48a58aa96b6db10b1"]');
-    var photoWrapper = photoImg ? positionedWrapper(photoImg) : null;
+    // Canva serves a different-resolution file (different filename hash) for
+    // this same photo depending on viewport/DPR, so matching by filename only
+    // works at one screen size. The design's rotation angle is stable across
+    // resolutions and unique to this element, so use that as the fingerprint.
+    var photoWrapper = Array.from(document.querySelectorAll('div[style*="rotate(-2.77671deg)"]')).find(function (d) {
+      return d.querySelector("img");
+    });
+    var photoImg = photoWrapper ? photoWrapper.querySelector("img") : null;
 
     if (
       addressWrappers.length < 2 ||
