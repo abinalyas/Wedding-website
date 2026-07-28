@@ -14,6 +14,7 @@
 (function () {
   var CHURCH_MAP_URL = "https://share.google/mj4SUi6sxP5xCDd6x";
   var RECEPTION_MAP_URL = "https://share.google/MA3LIDcFJFWbJuGrc";
+  var CALL_PHONE_URL = "tel:+919567882568";
 
   function textEls(txt) {
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -169,9 +170,23 @@
     }
   }
 
+  function addCallLink() {
+    // The "Call" pill is Canva decorative text/shape with no real link
+    // (same as "Open map" originally) — wrap it in a real tel: link.
+    if (window.__callLinked) return;
+    var p = Array.from(document.querySelectorAll("p")).find(function (el) {
+      return el.textContent.trim() === "Call";
+    });
+    var wrapper = p ? positionedWrapper(p) : null;
+    if (!wrapper) return;
+    window.__callLinked = true;
+    makeRealLink(wrapper, CALL_PHONE_URL);
+  }
+
   function runPatches() {
     patch();
     removeWishesSection();
+    addCallLink();
   }
 
   setInterval(runPatches, 300);
