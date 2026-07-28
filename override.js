@@ -183,10 +183,54 @@
     makeRealLink(wrapper, CALL_PHONE_URL);
   }
 
+  function fitHeadingOneLine(text) {
+    // "Before the wedding" sits in the same fixed-size text box as the
+    // single-word headings ("Location", "Reception"), but at this font
+    // size the phrase is just slightly wider than the box, so it wraps to
+    // a second line. Shrink the font just enough to fit on one line.
+    var flag = "__fit_" + text.replace(/\s+/g, "_");
+    if (window[flag]) return;
+    var p = Array.from(document.querySelectorAll("p")).find(function (el) {
+      return el.textContent.trim() === text;
+    });
+    if (!p) return;
+    var originalWhiteSpace = p.style.whiteSpace;
+    p.style.whiteSpace = "nowrap";
+    var naturalWidth = p.scrollWidth;
+    var containerWidth = p.parentElement.getBoundingClientRect().width;
+    // getBoundingClientRect is post-scale (visual px); scrollWidth is
+    // pre-scale (layout px). Recover the container's own layout width by
+    // reading the ancestor scale factor, so both sides compare fairly.
+    var scaleMatch = "";
+    var c = p;
+    while (c) {
+      var s = c.getAttribute && c.getAttribute("style");
+      if (s && /scale\(/.test(s)) {
+        scaleMatch = /scale\(([\d.]+)/.exec(s);
+        break;
+      }
+      c = c.parentElement;
+    }
+    var scale = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+    var containerLayoutWidth = containerWidth / scale;
+    p.style.whiteSpace = originalWhiteSpace;
+
+    if (naturalWidth <= containerLayoutWidth) return; // already fits
+    window[flag] = true;
+
+    var ratio = (containerLayoutWidth / naturalWidth) * 0.97; // small safety margin
+    var currentSize = parseFloat(getComputedStyle(p).fontSize);
+    var currentLineHeight = parseFloat(getComputedStyle(p).lineHeight);
+    p.style.setProperty("--H97cbQ", currentSize * ratio + "px");
+    p.style.fontSize = currentSize * ratio + "px";
+    if (!isNaN(currentLineHeight)) p.style.lineHeight = currentLineHeight * ratio + "px";
+  }
+
   function runPatches() {
     patch();
     removeWishesSection();
     addCallLink();
+    fitHeadingOneLine("Before the wedding");
   }
 
   setInterval(runPatches, 300);
