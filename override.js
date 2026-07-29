@@ -1,3 +1,26 @@
+/* Safari-specific cache-busting and image replacement fix for custom images.
+   Safari aggressively caches images, so we need to intercept and replace
+   media folder image URLs with custom folder URLs before they're loaded. */
+(function () {
+  var isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
+
+  if (isSafari) {
+    // Intercept all image requests and replace media URLs with custom URLs
+    var originalFetch = window.fetch;
+    window.fetch = function() {
+      var args = Array.prototype.slice.call(arguments);
+      if (args[0] && typeof args[0] === 'string') {
+        args[0] = args[0]
+          .replace('8467e2714c5ea4e324f50a3489dbc008.png', 'custom/auditorium.png')
+          .replace('38734efc5828800bfe3ee993e21f1550.png', 'custom/church.png')
+          .replace('c852da63dec521c48a58aa96b6db10b1.png', 'custom/couple-1.png')
+          .replace('943ae7beed07668ecf162e39ff1904b3.png', 'custom/couple-2.png');
+      }
+      return originalFetch.apply(window, args);
+    };
+  }
+})();
+
 /* Reception-section structural patch for Abin & Meera's wedding invite.
    The "Reception" block was built by repurposing a leftover Canva dress-code
    template section, which left it with: a duplicate venue address, a stray
