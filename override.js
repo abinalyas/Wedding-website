@@ -203,7 +203,7 @@
     //    each venue instead of the generic stock image both used to share.
     //    Re-set every tick: if Canva regenerated the ceremony <img>, it
     //    would otherwise silently revert to the generic stock photo.
-    photoImg.src = "_assets/custom/church.webp";
+    photoImg.src = "_assets/custom/church.png";
 
     var photoClone = receptionSection.querySelector('[data-custom-clone="photo"]');
     if (!photoClone || !photoClone.isConnected) {
@@ -211,7 +211,7 @@
       photoClone.removeAttribute("id");
       photoClone.setAttribute("data-custom-clone", "photo");
       var cloneImg = photoClone.querySelector("img");
-      if (cloneImg) cloneImg.src = "_assets/custom/auditorium.jpg";
+      if (cloneImg) cloneImg.src = "_assets/custom/auditorium.png";
       receptionSection.appendChild(photoClone);
     }
     // Centered horizontally under the "Reception" heading (the ceremony's
