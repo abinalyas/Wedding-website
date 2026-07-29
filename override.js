@@ -1,39 +1,55 @@
-/* Disable Canva chunk loading since chunks are missing from the export.
-   These dynamic chunks are referenced but don't exist, causing ChunkLoadError.
-   Patch the __webpack_require__ to suppress chunk loading failures. */
+/* Completely suppress ChunkLoadError and missing resource errors globally.
+   The Canva export has missing dynamic chunks - we need to suppress these
+   errors completely so the page can render without waiting for missing files. */
 (function () {
-  // Intercept unhandledrejection to suppress ChunkLoadError
+  // Suppress ALL console errors related to missing chunks and resources
+  var originalError = console.error;
+  console.error = function() {
+    var args = Array.prototype.slice.call(arguments);
+    var message = args.join(' ');
+    if (
+      message.includes('ChunkLoadError') ||
+      message.includes('Failed to load resource') ||
+      message.includes('_assets') ||
+      message.includes('.map')
+    ) {
+      return; // Suppress these errors
+    }
+    return originalError.apply(console, args);
+  };
+
+  // Suppress unhandledrejection globally
   window.addEventListener('unhandledrejection', function(event) {
-    if (event.reason && event.reason.message && event.reason.message.includes('ChunkLoadError')) {
-      event.preventDefault();
-      return true;
+    if (event.reason) {
+      var reason = String(event.reason);
+      if (
+        reason.includes('ChunkLoadError') ||
+        reason.includes('Loading chunk') ||
+        reason.includes('failed')
+      ) {
+        event.preventDefault();
+      }
     }
   });
+
+  // Suppress error events for missing chunks
+  window.addEventListener('error', function(e) {
+    if (e && (
+      (e.filename && e.filename.includes('_assets/')) ||
+      (e.message && e.message.includes('ChunkLoadError'))
+    )) {
+      e.preventDefault && e.preventDefault();
+      return true;
+    }
+  }, true);
 })();
 
-/* Safari-specific cache-busting and image replacement fix for custom images.
-   Safari aggressively caches images, so we need to intercept and replace
-   media folder image URLs with custom folder URLs before they're loaded. */
+/* Safari-specific image replacement fix.
+   Replace media folder image URLs with custom folder URLs. */
 (function () {
   var isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
 
-  // Suppress missing resource errors that interfere with Canva runtime
-  if (window.addEventListener) {
-    window.addEventListener('error', function(e) {
-      if (e.filename && (
-        e.filename.includes('_assets/') ||
-        e.filename.includes('.map') ||
-        e.message.includes('Failed to load') ||
-        e.message.includes('ChunkLoadError')
-      )) {
-        e.preventDefault && e.preventDefault();
-        return true;
-      }
-    }, true);
-  }
-
   if (isSafari) {
-    // Intercept all image requests and replace media URLs with custom URLs
     var originalFetch = window.fetch;
     window.fetch = function() {
       var args = Array.prototype.slice.call(arguments);
