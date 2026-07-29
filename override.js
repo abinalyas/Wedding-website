@@ -1,3 +1,16 @@
+/* Disable Canva chunk loading since chunks are missing from the export.
+   These dynamic chunks are referenced but don't exist, causing ChunkLoadError.
+   Patch the __webpack_require__ to suppress chunk loading failures. */
+(function () {
+  // Intercept unhandledrejection to suppress ChunkLoadError
+  window.addEventListener('unhandledrejection', function(event) {
+    if (event.reason && event.reason.message && event.reason.message.includes('ChunkLoadError')) {
+      event.preventDefault();
+      return true;
+    }
+  });
+})();
+
 /* Safari-specific cache-busting and image replacement fix for custom images.
    Safari aggressively caches images, so we need to intercept and replace
    media folder image URLs with custom folder URLs before they're loaded. */
@@ -10,7 +23,8 @@
       if (e.filename && (
         e.filename.includes('_assets/') ||
         e.filename.includes('.map') ||
-        e.message.includes('Failed to load')
+        e.message.includes('Failed to load') ||
+        e.message.includes('ChunkLoadError')
       )) {
         e.preventDefault && e.preventDefault();
         return true;
