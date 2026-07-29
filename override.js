@@ -38,26 +38,30 @@
     return null;
   }
 
-  function makeButton(href, label) {
+  function makeButton(href, label, scale) {
     // Canva's own "Open map" pill is an SVG shape (with its own <clipPath>
     // ids) layered behind plain text. Cloning that whole structure ran into
     // Canva's runtime re-processing the duplicate ids/shape unpredictably
     // (it rendered as a blank box, or shrank the text). A plain CSS pill
     // with the same visual values (colors, border, corner radius, font) is
     // simpler and renders reliably, and the whole pill is clickable instead
-    // of just the text.
+    // of just the text. Dimensions are design-space values (calibrated at
+    // desktop width) multiplied by `scale`, since Canva recomputes its own
+    // element sizes per breakpoint rather than using one shared page scale.
+    var w = 509 * scale;
+    var h = 108 * scale;
     var wrap = document.createElement("div");
     wrap.style.cssText =
-      "width: 509px; height: 108px; border-radius: 54px; background: rgb(248, 248, 247); " +
-      "border: 2.5px solid rgb(209, 205, 196); display: flex; align-items: center; justify-content: center; box-sizing: border-box;";
+      "width: " + w + "px; height: " + h + "px; border-radius: " + h / 2 + "px; background: rgb(248, 248, 247); " +
+      "border: " + 2.5 * scale + "px solid rgb(209, 205, 196); display: flex; align-items: center; justify-content: center; box-sizing: border-box;";
     var a = document.createElement("a");
     a.href = href;
     a.target = "_blank";
     a.rel = "noopener";
     a.textContent = label;
     a.style.cssText =
-      "font-family: YADSvvPAniY_0, auto; font-size: 46.6664px; color: rgb(64, 64, 64); " +
-      "text-decoration: none; cursor: pointer;";
+      "font-family: YADSvvPAniY_0, auto; font-size: " + 46.6664 * scale + "px; color: rgb(64, 64, 64); " +
+      "text-decoration: none; cursor: pointer; white-space: nowrap;";
     wrap.appendChild(a);
     return wrap;
   }
@@ -84,6 +88,7 @@
     var addressWrappers = textEls("Petrose Convention Centre, Vadayampady").map(positionedWrapper);
     var venueWrapper = positionedWrapper(textEls("Venue")[0]);
     var timeWrapper = positionedWrapper(textEls("6:30 PM")[0]);
+    var headingWrapper = positionedWrapper(textEls("Reception")[0]);
     var ceremonyTimeWrapper = positionedWrapper(textEls("3:00 PM")[0]);
     var mapTextWrapper = positionedWrapper(textEls("Open map")[0]);
     // The visible pill/button look ("Open map" text + rounded, bordered
@@ -106,6 +111,7 @@
       !addressWrappers[1] ||
       !venueWrapper ||
       !timeWrapper ||
+      !headingWrapper ||
       !ceremonyTimeWrapper ||
       !mapWrapper ||
       !photoWrapper
@@ -118,6 +124,14 @@
 
     window.__receptionPatched = true;
 
+    // Canva recomputes each element's own box width per breakpoint (mobile
+    // isn't just a visual scale-down of the desktop layout — the numbers
+    // are genuinely different), but the RATIO between breakpoints is
+    // consistent. Everything below was calibrated against the "6:30 PM"
+    // wrapper's desktop width (922.111px); multiplying by this ratio makes
+    // it adapt to whatever breakpoint is actually rendering.
+    var scale = parseFloat(timeWrapper.style.width) / 922.111;
+
     // 1. Remove the duplicate address and the superfluous "Venue" label
     //    (the "Reception" heading already plays that role, same as "Location" does).
     addressWrappers[1].remove();
@@ -127,17 +141,17 @@
     var timeP = timeWrapper.querySelector("p");
     var sourceP = ceremonyTimeWrapper.querySelector("p");
     if (timeP && sourceP) timeP.setAttribute("style", sourceP.getAttribute("style"));
-    timeWrapper.style.height = "115px";
-    timeWrapper.style.width = "700px";
+    timeWrapper.style.height = 115 * scale + "px";
+    timeWrapper.style.width = 700 * scale + "px";
 
     // 3. Clone the ceremony's photo block into the reception section (for its
     //    position/rotation/frame styling), then swap in the real photos for
     //    each venue instead of the generic stock image both used to share.
     var photoClone = photoWrapper.cloneNode(true);
     photoClone.removeAttribute("id");
-    photoClone.style.transform = "translate(176.364px, 620px) rotate(-2.77671deg)";
+    photoClone.style.transform = "translate(" + 176.364 * scale + "px, " + 620 * scale + "px) rotate(-2.77671deg)";
     var cloneImg = photoClone.querySelector("img");
-    if (cloneImg) cloneImg.src = "_assets/custom/auditorium.avif";
+    if (cloneImg) cloneImg.src = "_assets/custom/auditorium.jpg";
     receptionSection.appendChild(photoClone);
 
     photoImg.src = "_assets/custom/church.webp";
@@ -146,9 +160,11 @@
     //    and make the ceremony's existing one a real link too.
     makeRealLink(mapWrapper, CHURCH_MAP_URL);
 
-    var mapButton = makeButton(RECEPTION_MAP_URL, "Open map");
+    var mapButton = makeButton(RECEPTION_MAP_URL, "Open map", scale);
+    var btnWidth = 509 * scale;
+    var headingCenterX = parseFloat(headingWrapper.style.transform.match(/translate\(([\d.]+)/)[1]) + parseFloat(headingWrapper.style.width) / 2;
     mapButton.style.position = "absolute";
-    mapButton.style.transform = "translate(293px, 1500px)";
+    mapButton.style.transform = "translate(" + (headingCenterX - btnWidth / 2) + "px, " + 1500 * scale + "px)";
     mapButton.style.top = "0";
     mapButton.style.left = "0";
     receptionSection.appendChild(mapButton);
