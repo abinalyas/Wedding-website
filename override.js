@@ -254,6 +254,25 @@
     }
   }
 
+  function swapIntroCoupleImages() {
+    // The two generic stock "couple" photos under the "Together with their
+    // families..." intro text, replaced with the real couple photos. Same
+    // resolution-swap issue as the ceremony/reception photos (Canva serves
+    // a different file per viewport/DPR), so match by each photo's stable
+    // design rotation angle rather than by filename. Re-applied every tick
+    // in case Canva ever regenerates these <img> elements.
+    [
+      { rotation: "-6.05501deg", src: "_assets/custom/couple-1.jpg" },
+      { rotation: "9.5948deg", src: "_assets/custom/couple-2.jpg" },
+    ].forEach(function (pair) {
+      var wrapper = Array.from(document.querySelectorAll('div[style*="rotate(' + pair.rotation + ')"]')).find(function (d) {
+        return d.querySelector("img");
+      });
+      var img = wrapper ? wrapper.querySelector("img") : null;
+      if (img && img.src.indexOf(pair.src) === -1) img.src = pair.src;
+    });
+  }
+
   function addCallLink() {
     // The "Call" pill is Canva decorative text/shape with no real link
     // (same as "Open map" originally) — wrap it in a real tel: link.
@@ -330,6 +349,7 @@
     removeWishesSection();
     addCallLink();
     fitHeadingOneLine("Before the wedding");
+    swapIntroCoupleImages();
   }
 
   setInterval(runPatches, 300);
