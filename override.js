@@ -4,6 +4,20 @@
 (function () {
   var isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
 
+  // Suppress missing resource errors that interfere with Canva runtime
+  if (window.addEventListener) {
+    window.addEventListener('error', function(e) {
+      if (e.filename && (
+        e.filename.includes('_assets/') ||
+        e.filename.includes('.map') ||
+        e.message.includes('Failed to load')
+      )) {
+        e.preventDefault && e.preventDefault();
+        return true;
+      }
+    }, true);
+  }
+
   if (isSafari) {
     // Intercept all image requests and replace media URLs with custom URLs
     var originalFetch = window.fetch;
