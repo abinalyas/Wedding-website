@@ -204,12 +204,28 @@
     // single-word headings ("Location", "Reception"), but at this font
     // size the phrase is just slightly wider than the box, so it wraps to
     // a second line. Shrink the font just enough to fit on one line.
-    var flag = "__fit_" + text.replace(/\s+/g, "_");
-    if (window[flag]) return;
+    //
+    // This must be fully re-evaluated on every call (not just once ever):
+    // Canva recomputes the box width live on window resize, so a value
+    // that fit at one window size can wrap at another. It always resets to
+    // the ORIGINAL font-size first before measuring, so repeated calls
+    // don't compound a shrink on top of a previous shrink.
     var p = Array.from(document.querySelectorAll("p")).find(function (el) {
       return el.textContent.trim() === text;
     });
     if (!p) return;
+
+    if (!p.__origFontSize) {
+      // Cache the pristine values once, from the very first real (already
+      // fits-or-not, doesn't matter) measurement, so later calls always
+      // shrink from the true original — never from an already-shrunk size.
+      p.__origFontSize = getComputedStyle(p).fontSize;
+      p.__origLineHeight = getComputedStyle(p).lineHeight;
+    }
+    p.style.fontSize = p.__origFontSize;
+    p.style.setProperty("--H97cbQ", p.__origFontSize);
+    p.style.lineHeight = p.__origLineHeight;
+
     var originalWhiteSpace = p.style.whiteSpace;
     p.style.whiteSpace = "nowrap";
     var naturalWidth = p.scrollWidth;
@@ -231,12 +247,11 @@
     var containerLayoutWidth = containerWidth / scale;
     p.style.whiteSpace = originalWhiteSpace;
 
-    if (naturalWidth <= containerLayoutWidth) return; // already fits
-    window[flag] = true;
+    if (naturalWidth <= containerLayoutWidth) return; // fits at original size
 
     var ratio = (containerLayoutWidth / naturalWidth) * 0.97; // small safety margin
-    var currentSize = parseFloat(getComputedStyle(p).fontSize);
-    var currentLineHeight = parseFloat(getComputedStyle(p).lineHeight);
+    var currentSize = parseFloat(p.__origFontSize);
+    var currentLineHeight = parseFloat(p.__origLineHeight);
     p.style.setProperty("--H97cbQ", currentSize * ratio + "px");
     p.style.fontSize = currentSize * ratio + "px";
     if (!isNaN(currentLineHeight)) p.style.lineHeight = currentLineHeight * ratio + "px";
