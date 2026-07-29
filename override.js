@@ -262,8 +262,8 @@
     // design rotation angle rather than by filename. Re-applied every tick
     // in case Canva ever regenerates these <img> elements.
     [
-      { rotation: "-6.05501deg", src: "_assets/custom/couple-1.jpg" },
-      { rotation: "9.5948deg", src: "_assets/custom/couple-2.jpg" },
+      { rotation: "-6.05501deg", src: "_assets/custom/couple-1.png" },
+      { rotation: "9.5948deg", src: "_assets/custom/couple-2.png" },
     ].forEach(function (pair) {
       var wrapper = Array.from(document.querySelectorAll('div[style*="rotate(' + pair.rotation + ')"]')).find(function (d) {
         return d.querySelector("img");
