@@ -16,12 +16,60 @@
   var RECEPTION_MAP_URL = "https://share.google/MA3LIDcFJFWbJuGrc";
   var CALL_PHONE_URL = "tel:+919567882568";
 
+  var calibrations = {};
+  function reliableProportional(key, rawValue) {
+    // A handful of ticks have measured elements (the "6:30 PM" wrapper's
+    // width, the "Reception" heading's x-position) with wildly wrong
+    // values — not just the known hidden-measurement-clone case, some
+    // other transient render/reflow state. These values track window
+    // width roughly proportionally (Canva's per-breakpoint sizing is
+    // consistent, at least locally between nearby widths), so calibrate
+    // each one once and only accept a fresh measurement if it's close to
+    // what that calibration predicts for the current window width;
+    // otherwise use the predicted value instead of trusting a possibly-bad
+    // fresh reading.
+    var winW = window.innerWidth;
+    var cal = calibrations[key];
+    if (!cal) {
+      calibrations[key] = { value: rawValue, winW: winW };
+      return rawValue;
+    }
+    var predicted = cal.value * (winW / cal.winW);
+    if (rawValue > predicted * 0.8 && rawValue < predicted * 1.2) {
+      calibrations[key] = { value: rawValue, winW: winW };
+      return rawValue;
+    }
+    return predicted;
+  }
+
+  function isHiddenMeasurementClone(el) {
+    // Canva keeps an invisible "position: absolute; opacity: 0;" duplicate
+    // of some text (likely for a11y/measurement) alongside the real,
+    // visible element. It matches the same text and the same structural
+    // pattern, so anything that walks up to a "translate + width/height"
+    // wrapper can accidentally land on the degenerate hidden one instead
+    // of the real one — which is what caused a near-zero scale factor to
+    // get computed and locked in once.
+    var c = el;
+    while (c) {
+      var s = c.getAttribute && c.getAttribute("style");
+      if (s && /opacity:\s*0\b/.test(s) && /position:\s*absolute/.test(s)) return true;
+      c = c.parentElement;
+    }
+    return false;
+  }
+
   function textEls(txt) {
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     var out = [];
     var n;
     while ((n = walker.nextNode())) {
-      if (n.parentElement && n.parentElement.tagName !== "SCRIPT" && n.textContent.trim() === txt) {
+      if (
+        n.parentElement &&
+        n.parentElement.tagName !== "SCRIPT" &&
+        n.textContent.trim() === txt &&
+        !isHiddenMeasurementClone(n.parentElement)
+      ) {
         out.push(n.parentElement);
       }
     }
@@ -83,8 +131,16 @@
   }
 
   function patch() {
-    if (window.__receptionPatched) return;
-
+    // This runs on every patch tick, not just once. Canva recomputes each
+    // element's box size live (window resize, and apparently sometimes on
+    // its own) and can regenerate DOM nodes within the reception section —
+    // when that happens, a one-time fix either goes stale (wrong position
+    // for the new size) or vanishes entirely (a freshly-created ceremony
+    // photo reverts to Canva's own default src; an injected clone/button
+    // that isn't part of Canva's own render gets wiped along with the rest
+    // of the section's children). So every step below is written to be
+    // safely re-appliable: cheap style/src overwrites just happen again,
+    // and inserted elements are tagged and re-created only if missing.
     var addressWrappers = textEls("Petrose Convention Centre, Vadayampady").map(positionedWrapper);
     var venueWrapper = positionedWrapper(textEls("Venue")[0]);
     var timeWrapper = positionedWrapper(textEls("6:30 PM")[0]);
@@ -101,28 +157,16 @@
     // works at one screen size. The design's rotation angle is stable across
     // resolutions and unique to this element, so use that as the fingerprint.
     var photoWrapper = Array.from(document.querySelectorAll('div[style*="rotate(-2.77671deg)"]')).find(function (d) {
-      return d.querySelector("img");
+      return d.querySelector("img") && !d.hasAttribute("data-custom-clone");
     });
     var photoImg = photoWrapper ? photoWrapper.querySelector("img") : null;
 
-    if (
-      addressWrappers.length < 2 ||
-      !addressWrappers[0] ||
-      !addressWrappers[1] ||
-      !venueWrapper ||
-      !timeWrapper ||
-      !headingWrapper ||
-      !ceremonyTimeWrapper ||
-      !mapWrapper ||
-      !photoWrapper
-    ) {
+    if (!timeWrapper || !headingWrapper || !ceremonyTimeWrapper || !mapWrapper || !photoWrapper) {
       return; // Canva hasn't finished rendering this section yet — retry.
     }
 
     var receptionSection = timeWrapper.parentNode;
     if (!receptionSection) return;
-
-    window.__receptionPatched = true;
 
     // Canva recomputes each element's own box width per breakpoint (mobile
     // isn't just a visual scale-down of the desktop layout — the numbers
@@ -130,12 +174,22 @@
     // consistent. Everything below was calibrated against the "6:30 PM"
     // wrapper's desktop width (922.111px); multiplying by this ratio makes
     // it adapt to whatever breakpoint is actually rendering.
-    var scale = parseFloat(timeWrapper.style.width) / 922.111;
+    var rawScale = parseFloat(timeWrapper.style.width) / 922.111;
+    var rawHeadingCenterX =
+      parseFloat(headingWrapper.style.transform.match(/translate\(([\d.]+)/)[1]) + parseFloat(headingWrapper.style.width) / 2;
+
+    if (!(rawScale > 0.05 && rawScale < 5) || !isFinite(rawHeadingCenterX)) return; // not a usable reading at all
+
+    var scale = reliableProportional("scale", rawScale);
+    var headingCenterX = reliableProportional("headingCenterX", rawHeadingCenterX);
 
     // 1. Remove the duplicate address and the superfluous "Venue" label
     //    (the "Reception" heading already plays that role, same as "Location" does).
-    addressWrappers[1].remove();
-    venueWrapper.remove();
+    //    Re-checked every tick in case Canva recreates them after a resize.
+    for (var i = 1; i < addressWrappers.length; i++) {
+      if (addressWrappers[i]) addressWrappers[i].remove();
+    }
+    if (venueWrapper) venueWrapper.remove();
 
     // 2. Restyle "6:30 PM" to match the ceremony's big decorative time font.
     var timeP = timeWrapper.querySelector("p");
@@ -147,27 +201,41 @@
     // 3. Clone the ceremony's photo block into the reception section (for its
     //    position/rotation/frame styling), then swap in the real photos for
     //    each venue instead of the generic stock image both used to share.
-    var photoClone = photoWrapper.cloneNode(true);
-    photoClone.removeAttribute("id");
-    photoClone.style.transform = "translate(" + 176.364 * scale + "px, " + 620 * scale + "px) rotate(-2.77671deg)";
-    var cloneImg = photoClone.querySelector("img");
-    if (cloneImg) cloneImg.src = "_assets/custom/auditorium.jpg";
-    receptionSection.appendChild(photoClone);
-
+    //    Re-set every tick: if Canva regenerated the ceremony <img>, it
+    //    would otherwise silently revert to the generic stock photo.
     photoImg.src = "_assets/custom/church.webp";
+
+    var photoClone = receptionSection.querySelector('[data-custom-clone="photo"]');
+    if (!photoClone || !photoClone.isConnected) {
+      photoClone = photoWrapper.cloneNode(true);
+      photoClone.removeAttribute("id");
+      photoClone.setAttribute("data-custom-clone", "photo");
+      var cloneImg = photoClone.querySelector("img");
+      if (cloneImg) cloneImg.src = "_assets/custom/auditorium.jpg";
+      receptionSection.appendChild(photoClone);
+    }
+    // Centered horizontally under the "Reception" heading (the ceremony's
+    // own photo is intentionally off-center for a scrapbook look, but the
+    // reception photo should read as centered, matching the button below it).
+    var photoWidth = parseFloat(photoClone.style.width);
+    photoClone.style.transform =
+      "translate(" + (headingCenterX - photoWidth / 2) + "px, " + 620 * scale + "px) rotate(-2.77671deg)";
 
     // 4. Add a real, working "Open map" button to the reception section,
     //    and make the ceremony's existing one a real link too.
     makeRealLink(mapWrapper, CHURCH_MAP_URL);
 
-    var mapButton = makeButton(RECEPTION_MAP_URL, "Open map", scale);
+    var mapButton = receptionSection.querySelector('[data-custom-clone="map-button"]');
+    if (!mapButton || !mapButton.isConnected) {
+      mapButton = makeButton(RECEPTION_MAP_URL, "Open map", scale);
+      mapButton.setAttribute("data-custom-clone", "map-button");
+      mapButton.style.position = "absolute";
+      mapButton.style.top = "0";
+      mapButton.style.left = "0";
+      receptionSection.appendChild(mapButton);
+    }
     var btnWidth = 509 * scale;
-    var headingCenterX = parseFloat(headingWrapper.style.transform.match(/translate\(([\d.]+)/)[1]) + parseFloat(headingWrapper.style.width) / 2;
-    mapButton.style.position = "absolute";
     mapButton.style.transform = "translate(" + (headingCenterX - btnWidth / 2) + "px, " + 1500 * scale + "px)";
-    mapButton.style.top = "0";
-    mapButton.style.left = "0";
-    receptionSection.appendChild(mapButton);
   }
 
   function removeWishesSection() {
