@@ -220,6 +220,14 @@
     var photoWidth = parseFloat(photoClone.style.width);
     photoClone.style.transform =
       "translate(" + (headingCenterX - photoWidth / 2) + "px, " + 620 * scale + "px) rotate(-2.77671deg)";
+    // The source photo participates in Canva's own scroll-reveal animation
+    // (opacity 0 until it scrolls into view, then animated to 1 by Canva's
+    // own controller). cloneNode(true) copies whatever opacity the source
+    // happened to be at that instant — if it was mid-reveal (or hasn't been
+    // revealed yet), the clone freezes at opacity 0 forever, since it isn't
+    // tracked by Canva's reveal system and nothing ever animates it back.
+    // Force it visible every tick regardless of the source's own state.
+    photoClone.style.opacity = "1";
 
     // 4. Add a real, working "Open map" button to the reception section,
     //    and make the ceremony's existing one a real link too.
