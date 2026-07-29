@@ -223,8 +223,10 @@
     // this same photo depending on viewport/DPR, so matching by filename only
     // works at one screen size. The design's rotation angle is stable across
     // resolutions and unique to this element, so use that as the fingerprint.
-    var photoWrapper = Array.from(document.querySelectorAll('div[style*="rotate(-2.77671deg)"]')).find(function (d) {
-      return d.querySelector("img") && !d.hasAttribute("data-custom-clone");
+    var photoWrapper = Array.from(document.querySelectorAll('div[style*="rotate("]')).find(function (d) {
+      var style = d.getAttribute("style") || "";
+      // Match rotation angle around -2.77 (flexible for Safari number formatting)
+      return /rotate\(-2\.7\d+deg\)/.test(style) && d.querySelector("img") && !d.hasAttribute("data-custom-clone");
     });
     var photoImg = photoWrapper ? photoWrapper.querySelector("img") : null;
 
