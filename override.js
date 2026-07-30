@@ -325,31 +325,22 @@
 
     if (!ceremonySection) return; // Section not ready yet
 
-    // Create video container
-    var container = document.createElement("div");
-    container.id = "rings-animation-container";
-    container.style.cssText =
-      "width: 100%; height: auto; display: flex; justify-content: center; align-items: center; " +
-      "padding: 40px 20px;";
-
-    // Create video element
+    // Create video element - minimal styling to blend with page
     var video = document.createElement("video");
+    video.id = "rings-animation";
     video.src = "rings-animation.mp4";
     video.style.cssText =
-      "width: 100%; max-width: 300px; height: auto; display: block; " +
-      "border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);";
+      "width: 100%; height: auto; display: block; opacity: 0.8;";
     video.autoplay = true;
     video.loop = true;
     video.muted = true;
     video.playsinline = true; // For iOS
 
-    container.appendChild(video);
-
     // Insert after ceremony section
     if (ceremonySection.nextSibling) {
-      ceremonySection.parentNode.insertBefore(container, ceremonySection.nextSibling);
+      ceremonySection.parentNode.insertBefore(video, ceremonySection.nextSibling);
     } else {
-      ceremonySection.parentNode.appendChild(container);
+      ceremonySection.parentNode.appendChild(video);
     }
 
     window.__ringsAnimationAdded = true;
