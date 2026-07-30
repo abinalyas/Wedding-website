@@ -315,6 +315,46 @@
     mapButton.style.transform = "translate(" + (headingCenterX - btnWidth / 2) + "px, " + 1500 * scale + "px)";
   }
 
+  function addRingsAnimation() {
+    // Add wedding rings animation as a section separator
+    if (window.__ringsAnimationAdded) return;
+
+    var ceremonySection = Array.from(document.querySelectorAll("section")).find(function(s) {
+      return s.textContent.indexOf("3:00 PM") !== -1;
+    });
+
+    if (!ceremonySection) return; // Section not ready yet
+
+    // Create video container
+    var container = document.createElement("div");
+    container.id = "rings-animation-container";
+    container.style.cssText =
+      "width: 100%; height: auto; display: flex; justify-content: center; align-items: center; " +
+      "padding: 40px 20px;";
+
+    // Create video element
+    var video = document.createElement("video");
+    video.src = "rings-animation.mp4";
+    video.style.cssText =
+      "width: 100%; max-width: 300px; height: auto; display: block; " +
+      "border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);";
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+    video.playsinline = true; // For iOS
+
+    container.appendChild(video);
+
+    // Insert after ceremony section
+    if (ceremonySection.nextSibling) {
+      ceremonySection.parentNode.insertBefore(container, ceremonySection.nextSibling);
+    } else {
+      ceremonySection.parentNode.appendChild(container);
+    }
+
+    window.__ringsAnimationAdded = true;
+  }
+
   function removeWishesSection() {
     // Drop the leftover "wishes/our families" section (couple photos +
     // "It would mean the world to us..." + the date) entirely, so the page
@@ -427,6 +467,7 @@
     addCallLink();
     fitHeadingOneLine("Before the wedding");
     swapIntroCoupleImages();
+    addRingsAnimation();
   }
 
   setInterval(runPatches, 300);
