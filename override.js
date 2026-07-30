@@ -315,35 +315,116 @@
     mapButton.style.transform = "translate(" + (headingCenterX - btnWidth / 2) + "px, " + 1500 * scale + "px)";
   }
 
-  function addRingsAnimation() {
-    // Add wedding rings animation as a section separator
-    if (window.__ringsAnimationAdded) return;
+  // The rings clip is a 3D render on a plain white studio background with the
+  // generator's watermark in the bottom-right corner. Two tricks make it read
+  // as part of the invite rather than a video pasted onto it:
+  //   * mix-blend-mode:multiply — white multiplied against any backdrop leaves
+  //     the backdrop untouched, so the white studio background disappears into
+  //     whatever is behind it while the gold rings stay gold. This only works
+  //     while nothing between the video and that backdrop creates its own
+  //     stacking context, so the video must NOT sit inside a positioned/
+  //     z-indexed/opacity'd wrapper.
+  //   * clip-path — crops the watermark off the bottom-right, plus a little off
+  //     each edge to tighten the framing around the rings.
+  var RINGS_CROP = { top: 0.06, right: 0.12, bottom: 0.16, left: 0.12 };
+  var RINGS_VISIBLE_FRACTION = 1 - RINGS_CROP.top - RINGS_CROP.bottom;
+  var RINGS_ASPECT = 1088 / 720; // clip's intrinsic ratio; re-read once metadata loads
+  var RINGS_MAX_WIDTH = 420;
+  var RINGS_GAP_MARGIN = 34; // breathing room so the rings clear the button above
+  // Where the rings actually sit within the clip's frame, as a share of frame
+  // height. The render is not vertically centred — the rings sit high with
+  // shadow/floor below — so centring the cropped box in the empty space leaves
+  // the rings grazing the button. Centre on this instead.
+  var RINGS_CONTENT_CENTER = 0.33;
+  // Share of the ceremony section's height that sits empty below its "Open map"
+  // button — measured at desktop (163px of 2298px) and proportional across
+  // Canva's breakpoints, since Canva scales a section's contents with its box.
+  var RINGS_GAP_FRACTION = 163 / 2298;
 
-    var ceremonySection = Array.from(document.querySelectorAll("section")).find(function(s) {
+  function addRingsAnimation() {
+    // Drop the wedding-rings clip into the empty space at the bottom of the
+    // ceremony section, below its "Open map" button.
+    //
+    // Deliberately NOT inserted as its own full-width band between the two
+    // sections: each Canva section paints its own copy of the paper-texture
+    // background image, restarting the texture's gradient at every section
+    // boundary, so a separate band can never line up with its neighbours and
+    // always shows as a visible seam. Overlaying the clip inside a section
+    // instead means it blends against that section's real background and no
+    // seam exists at all. The wrapper is zero-height and the video is pulled
+    // up over the section with a negative margin, so it adds no layout height.
+    var ceremonySection = Array.from(document.querySelectorAll("section")).find(function (s) {
       return s.textContent.indexOf("3:00 PM") !== -1;
     });
+    if (!ceremonySection) return; // Canva hasn't rendered this section yet.
 
-    if (!ceremonySection) return; // Section not ready yet
+    var wrapper = document.querySelector('[data-custom-clone="rings-wrapper"]');
+    var video = wrapper ? wrapper.querySelector("video") : null;
 
-    // Create video element - minimal styling to blend with page
-    var video = document.createElement("video");
-    video.id = "rings-animation";
-    video.src = "rings-animation.mp4";
-    video.style.cssText =
-      "width: 100%; height: auto; display: block; opacity: 0.8;";
-    video.autoplay = true;
-    video.loop = true;
-    video.muted = true;
-    video.playsinline = true; // For iOS
+    if (!wrapper || !wrapper.isConnected) {
+      wrapper = document.createElement("div");
+      wrapper.setAttribute("data-custom-clone", "rings-wrapper");
+      // Zero height + overflow visible: contributes nothing to the page flow,
+      // it only centres the video horizontally. No position/z-index/opacity
+      // here, or it would isolate the video's multiply blend (see above).
+      wrapper.style.cssText =
+        "height: 0; overflow: visible; display: flex; justify-content: center; align-items: flex-start;";
 
-    // Insert after ceremony section
-    if (ceremonySection.nextSibling) {
-      ceremonySection.parentNode.insertBefore(video, ceremonySection.nextSibling);
-    } else {
-      ceremonySection.parentNode.appendChild(video);
+      video = document.createElement("video");
+      video.src = "rings-animation.mp4";
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true; // iOS: play inline instead of going fullscreen
+      video.setAttribute("playsinline", "");
+      video.setAttribute("muted", "");
+      // Some browsers reset a media element to paused when it is re-parented,
+      // and a loop that has to seek back to 0 fails on hosts that don't answer
+      // Range requests. Nudge it back into playing on both events.
+      video.addEventListener("ended", function () {
+        video.currentTime = 0;
+        var p = video.play();
+        if (p && p.catch) p.catch(function () {});
+      });
+
+      wrapper.appendChild(video);
+      ceremonySection.parentNode.insertBefore(wrapper, ceremonySection.nextSibling);
     }
 
-    window.__ringsAnimationAdded = true;
+    if (video.videoWidth && video.videoHeight) RINGS_ASPECT = video.videoWidth / video.videoHeight;
+
+    // Size the empty space as a fraction of the section's own height rather
+    // than by measuring the "Open map" pill directly. Canva virtualizes
+    // offscreen sections and keeps degenerate duplicates of some text nodes,
+    // so a text-anchored measurement intermittently reads a wrong position
+    // (and once wrote a -1204px offset that parked the clip over the button).
+    // The section height is a single, always-present measurement, and the gap
+    // below the button is a stable share of it across Canva's breakpoints.
+    var sectionHeight = ceremonySection.getBoundingClientRect().height;
+    if (!(sectionHeight > 400)) return; // section not laid out yet
+    var gap = sectionHeight * RINGS_GAP_FRACTION;
+
+    // Size the clip so its *visible* (post-crop) height fits the empty space.
+    var visibleHeight = Math.min(gap - RINGS_GAP_MARGIN, RINGS_MAX_WIDTH / RINGS_ASPECT * RINGS_VISIBLE_FRACTION);
+    var layoutHeight = visibleHeight / RINGS_VISIBLE_FRACTION;
+    var width = layoutHeight * RINGS_ASPECT;
+
+    video.style.cssText =
+      "width: " + width + "px; height: auto; display: block;" +
+      "mix-blend-mode: multiply;" +
+      "clip-path: inset(" +
+        RINGS_CROP.top * 100 + "% " + RINGS_CROP.right * 100 + "% " +
+        RINGS_CROP.bottom * 100 + "% " + RINGS_CROP.left * 100 + "%);" +
+      // Sits on top of the section, so let clicks through to the button above.
+      "pointer-events: none;" +
+      // With no margin the video would start at the section's bottom edge;
+      // pull it up so the rings land in the middle of the empty space.
+      "margin-top: " + (-gap / 2 - RINGS_CONTENT_CENTER * layoutHeight) + "px;";
+
+    if (video.paused && video.readyState >= 2) {
+      var play = video.play();
+      if (play && play.catch) play.catch(function () {});
+    }
   }
 
   function removeWishesSection() {
