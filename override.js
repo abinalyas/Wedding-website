@@ -315,31 +315,36 @@
     mapButton.style.transform = "translate(" + (headingCenterX - btnWidth / 2) + "px, " + 1500 * scale + "px)";
   }
 
-  // The rings clip is a 3D render on a plain white studio background with the
-  // generator's watermark in the bottom-right corner. Two tricks make it read
-  // as part of the invite rather than a video pasted onto it:
-  //   * mix-blend-mode:multiply — white multiplied against any backdrop leaves
-  //     the backdrop untouched, so the white studio background disappears into
-  //     whatever is behind it while the gold rings stay gold. This only works
-  //     while nothing between the video and that backdrop creates its own
-  //     stacking context, so the video must NOT sit inside a positioned/
-  //     z-indexed/opacity'd wrapper.
-  //   * clip-path — crops the watermark off the bottom-right, plus a little off
-  //     each edge to tighten the framing around the rings.
-  var RINGS_CROP = { top: 0.06, right: 0.12, bottom: 0.16, left: 0.12 };
-  var RINGS_VISIBLE_FRACTION = 1 - RINGS_CROP.top - RINGS_CROP.bottom;
+  // The rings clip is a 3D render on a plain white studio background. Dropping
+  // that white with mix-blend-mode:multiply is what makes it read as part of
+  // the invite rather than a video pasted onto it: white multiplied against any
+  // backdrop leaves the backdrop untouched, so the studio background disappears
+  // into whatever is behind it while the gold rings stay gold. This only works
+  // while nothing between the video and that backdrop creates its own stacking
+  // context, so the video must NOT sit inside a positioned / z-indexed /
+  // opacity'd wrapper.
+  //
+  // The full frame is used — no clip-path. The animation is a slow zoom-in and
+  // by the end of the loop the rings very nearly fill the frame, so cropping
+  // the edges (an earlier attempt, to tighten the framing) clipped the rings
+  // themselves for the back half of the loop. The generator's watermark, which
+  // was the other reason to crop, is gone from the clip itself: it was removed
+  // with ffmpeg's delogo, having first confirmed the rings never enter that
+  // corner (max saturation there is 5 across all 121 frames, vs 106 for gold).
   var RINGS_ASPECT = 1088 / 720; // clip's intrinsic ratio; re-read once metadata loads
-  var RINGS_MAX_WIDTH = 420;
+  var RINGS_MAX_WIDTH = 520;
   var RINGS_GAP_MARGIN = 34; // breathing room so the rings clear the button above
-  // Where the rings actually sit within the clip's frame, as a share of frame
-  // height. The render is not vertically centred — the rings sit high with
-  // shadow/floor below — so centring the cropped box in the empty space leaves
-  // the rings grazing the button. Centre on this instead.
-  var RINGS_CONTENT_CENTER = 0.33;
   // Share of the ceremony section's height that sits empty below its "Open map"
   // button — measured at desktop (163px of 2298px) and proportional across
   // Canva's breakpoints, since Canva scales a section's contents with its box.
   var RINGS_GAP_FRACTION = 163 / 2298;
+  // The reception section that follows has its own empty strip above the
+  // "Reception" heading (75px of 2191px). The clip is centred across the
+  // boundary so it can use both, which is the only way to make it meaningfully
+  // larger. Growing the ceremony section instead was tried and abandoned: its
+  // height is duplicated across five nested Canva wrappers, all of which would
+  // have to be rewritten every tick against Canva's own re-hydration.
+  var RINGS_RECEPTION_TOP_FRACTION = 75 / 2191;
 
   function addRingsAnimation() {
     // Drop the wedding-rings clip into the empty space at the bottom of the
@@ -393,33 +398,37 @@
 
     if (video.videoWidth && video.videoHeight) RINGS_ASPECT = video.videoWidth / video.videoHeight;
 
-    // Size the empty space as a fraction of the section's own height rather
-    // than by measuring the "Open map" pill directly. Canva virtualizes
-    // offscreen sections and keeps degenerate duplicates of some text nodes,
-    // so a text-anchored measurement intermittently reads a wrong position
-    // (and once wrote a -1204px offset that parked the clip over the button).
-    // The section height is a single, always-present measurement, and the gap
-    // below the button is a stable share of it across Canva's breakpoints.
-    var sectionHeight = ceremonySection.getBoundingClientRect().height;
-    if (!(sectionHeight > 400)) return; // section not laid out yet
-    var gap = sectionHeight * RINGS_GAP_FRACTION;
+    // Size the empty space from each section's height rather than by measuring
+    // the "Open map" pill directly. Canva virtualizes offscreen sections and
+    // keeps degenerate duplicates of some text nodes, so a text-anchored
+    // measurement intermittently reads a wrong position (and once wrote a
+    // -1204px offset that parked the clip over the button). Section heights are
+    // always-present measurements, and the empty strips are a stable share of
+    // them across Canva's breakpoints.
+    var ceremonyHeight = ceremonySection.getBoundingClientRect().height;
+    if (!(ceremonyHeight > 400)) return; // section not laid out yet
+    var above = ceremonyHeight * RINGS_GAP_FRACTION;
 
-    // Size the clip so its *visible* (post-crop) height fits the empty space.
-    var visibleHeight = Math.min(gap - RINGS_GAP_MARGIN, RINGS_MAX_WIDTH / RINGS_ASPECT * RINGS_VISIBLE_FRACTION);
-    var layoutHeight = visibleHeight / RINGS_VISIBLE_FRACTION;
+    // The wrapper sits exactly on the section boundary, so the strip below it
+    // belongs to the next section. Fall back to using only the space above if
+    // that section isn't there.
+    var next = wrapper.nextElementSibling;
+    var nextHeight = next && next.tagName === "SECTION" ? next.getBoundingClientRect().height : 0;
+    var below = nextHeight > 400 ? nextHeight * RINGS_RECEPTION_TOP_FRACTION : 0;
+
+    // Fit the whole frame in the combined empty band.
+    var layoutHeight = Math.min(above + below - RINGS_GAP_MARGIN, RINGS_MAX_WIDTH / RINGS_ASPECT);
+    if (!(layoutHeight > 40)) return;
     var width = layoutHeight * RINGS_ASPECT;
 
     video.style.cssText =
       "width: " + width + "px; height: auto; display: block;" +
       "mix-blend-mode: multiply;" +
-      "clip-path: inset(" +
-        RINGS_CROP.top * 100 + "% " + RINGS_CROP.right * 100 + "% " +
-        RINGS_CROP.bottom * 100 + "% " + RINGS_CROP.left * 100 + "%);" +
-      // Sits on top of the section, so let clicks through to the button above.
+      // Sits on top of the sections, so let clicks through to the button above.
       "pointer-events: none;" +
-      // With no margin the video would start at the section's bottom edge;
-      // pull it up so the rings land in the middle of the empty space.
-      "margin-top: " + (-gap / 2 - RINGS_CONTENT_CENTER * layoutHeight) + "px;";
+      // With no margin the video's top would sit on the section boundary; pull
+      // it up so the frame is centred in the band that spans the boundary.
+      "margin-top: " + ((below - above) / 2 - layoutHeight / 2) + "px;";
 
     if (video.paused && video.readyState >= 2) {
       var play = video.play();
