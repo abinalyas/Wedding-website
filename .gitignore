@@ -1,0 +1,10 @@
+
+# Envelope source renders and intermediate cuts (masters kept locally only)
+_assets/envelope/closed.png
+_assets/envelope/open.png
+_assets/envelope/seal.png
+_assets/envelope/flat-outer.png
+_assets/envelope/out/
+
+# macOS metadata
+.DS_Store
