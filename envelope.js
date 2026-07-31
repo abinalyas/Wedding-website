@@ -46,9 +46,12 @@
   // seal does — holding the flap down rather than sitting above it.
   var SEAL_Y     = 0.62;
 
-  // Total time from the tap to the overlay being removed. Must stay in step
-  // with the transition delays in the CSS below.
-  var SEQUENCE_MS = 2900;
+  // Phase timings, in step with the transition delays in the CSS below.
+  var REVEAL_MS    = 2500;  // earliest the grown card may start fading
+  var FADE_MS      = 600;   // the card's fade, after which the overlay goes
+  // Cap on waiting for Canva to paint the hero. Past this the overlay lifts
+  // regardless, so a slow or broken boot can never strand a guest on it.
+  var HERO_WAIT_MS = 6000;
 
   // The envelope plays on every load, deliberately. It was previously gated
   // behind a sessionStorage flag so it only ran once per tab, but that flag
@@ -71,13 +74,22 @@
       // The overlay is focused on mount so it receives keys; it is a container,
       // not a control, so it must not paint a focus ring around the viewport.
       "outline:none;",
-      "opacity:1;transition:opacity .8s ease 1.15s}",
+      "opacity:1;transition:opacity .55s ease}",
     ".wenv.is-done{opacity:0}",
 
-    ".wenv__stage{position:relative;display:flex;flex-direction:column;",
-      "align-items:center;transform:scale(1);",
-      "transition:transform .9s cubic-bezier(.4,0,.2,1) 1.1s}",
-    ".wenv.is-done .wenv__stage{transform:scale(1.24)}",
+    ".wenv__stage{position:relative;display:flex;flex-direction:column;align-items:center}",
+
+    // ---- reveal -----------------------------------------------------------
+    // The site is revealed by growing the invitation itself until it fills the
+    // screen, then fading it. Previously the whole overlay just faded out, so
+    // the page appeared *behind* the envelope rather than coming out of it.
+    // The envelope fades first so the card is alone as it expands.
+    ".wenv.is-reveal .wenv__body,.wenv.is-reveal .wenv__flap,",
+      ".wenv.is-reveal .wenv__seal{opacity:0;transition:opacity .45s ease}",
+    // The exact transform is measured and set in JS, since it depends on the
+    // card's position on screen and the viewport it has to cover.
+    ".wenv.is-reveal .wenv__card{transition:transform 1s cubic-bezier(.4,0,.25,1);",
+      "box-shadow:0 10px 60px rgba(104,86,60,.16)}",
 
     // ---- envelope ---------------------------------------------------------
     ".wenv__env{position:relative;width:var(--env-w);",
@@ -229,22 +241,71 @@
 
     overlay.focus({ preventScroll: true });
 
+    // Canva has not started yet — canva-boot.js is holding its bundles so the
+    // hero's pearls fly in while a guest is actually looking at the page
+    // rather than behind the envelope. Poll for the hero appearing so the
+    // overlay can be lifted the moment there is something behind it.
+    function heroPainted() {
+      var root = document.getElementById("root");
+      return !!(root && root.querySelector("section"));
+    }
+
     var opened = false;
     function open() {
       if (opened) return;
       opened = true;
 
-      // is-done drives the closing fade/scale; its own CSS delay handles the
-      // wait, so both classes can go on in the same frame.
       overlay.classList.add("is-open");
-      overlay.classList.add("is-done");
 
-      window.setTimeout(function () {
-        overlay.removeEventListener("wheel", block);
-        overlay.removeEventListener("touchmove", block);
-        document.documentElement.style.overflow = prevOverflow;
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-      }, SEQUENCE_MS);
+      // Phase 2: the envelope fades and the invitation grows to fill the
+      // screen, so the site emerges from inside the card rather than simply
+      // appearing behind the envelope. The transform has to be measured
+      // rather than written in CSS: it depends on where the card has slid to
+      // and how much of the viewport it must cover.
+      var revealAt = window.setTimeout(function () {
+        var card = overlay.querySelector(".wenv__card");
+        var r = card.getBoundingClientRect();
+        // Undo the slide to get the card's untransformed box, so the scale
+        // below is applied about its own centre predictably.
+        var h = r.height, w = r.width;
+        var top = r.top + 0.66 * h;
+        var cx = r.left + w / 2, cy = top + h / 2;
+        var dx = window.innerWidth / 2 - cx;
+        var dy = window.innerHeight / 2 - cy;
+        var scale = Math.max(window.innerWidth / w, window.innerHeight / h) * 1.08;
+        card.style.transform =
+          "translate(" + dx + "px," + dy + "px) scale(" + scale + ")";
+        overlay.classList.add("is-reveal");
+      }, 1750);
+
+      // Phase 3: the grown card fades, uncovering the site behind it. This
+      // waits for the hero to exist so the card never fades onto a blank
+      // screen, but no longer than HERO_WAIT_MS — if Canva is slow or has
+      // failed, showing the page late beats holding a guest on the overlay.
+      var t0 = Date.now();
+      var boots = false;
+      var doneAt = window.setInterval(function () {
+        var waited = Date.now() - t0;
+        if (waited < REVEAL_MS) return;
+        // Canva starts here rather than at the tap, and measurably paints the
+        // hero about 100ms later (its bundles were preloaded in <head>, so
+        // this is execution time only). Starting it at the tap instead meant
+        // the pearls had already flown most of the way in by the time the card
+        // cleared; starting it now puts the whole entrance in front of a guest
+        // as the card fades away over them.
+        if (!boots) { boots = true; if (window.__bootCanva) window.__bootCanva(); return; }
+        if (!heroPainted() && waited < HERO_WAIT_MS) return;
+        window.clearInterval(doneAt);
+        overlay.classList.add("is-done");
+        window.setTimeout(function () {
+          overlay.removeEventListener("wheel", block);
+          overlay.removeEventListener("touchmove", block);
+          document.documentElement.style.overflow = prevOverflow;
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }, FADE_MS);
+      }, 80);
+
+      window.setTimeout(function () { window.clearTimeout(revealAt); }, REVEAL_MS + 200);
     }
 
     overlay.addEventListener("click", open);
