@@ -28,7 +28,7 @@
   var FADE_MS = 1600;     // gentle rise as the card slides out
   var PREF_KEY = "am-music-muted";
 
-  var audio, button, fadeTimer, started = false;
+  var audio, button, fadeTimer, started = false, startListenersAttached = false;
 
   function muted() {
     try { return localStorage.getItem(PREF_KEY) === "1"; } catch (e) { return false; }
@@ -45,7 +45,7 @@
     "stroke-linecap='round'/>";
 
   function paintButton() {
-    if (!button) return;
+    if (!button || !audio) return;
     var off = audio.muted || audio.paused;
     button.innerHTML = "<svg viewBox='0 0 24 22' width='19' height='19' aria-hidden='true'>" +
       (off ? ICON_OFF : ICON_ON) + "</svg>";
@@ -104,21 +104,42 @@
     window.requestAnimationFrame(function () { button.classList.add("is-in"); });
   }
 
-  function start() {
-    if (started) return;
-    started = true;
-    addButton();
+  function playAudio() {
+    if (!audio) return;
     if (muted()) { audio.muted = true; paintButton(); return; }
     audio.volume = 0;
     var p = audio.play();
     if (p && p.catch) {
-      // Autoplay can still be refused — a mobile low-power mode, a site-level
-      // sound block. The control is already on screen, so leave it to the guest.
+      // Autoplay can still be refused — for example on mobile low-power mode
+      // or a site-level sound block. The control is already on screen, so leave
+      // it to the guest to tap it again if needed.
       p.then(function () { fadeTo(VOLUME); paintButton(); })
        .catch(function () { paintButton(); });
     } else {
       fadeTo(VOLUME);
     }
+  }
+
+  function start() {
+    if (started || !audio) return;
+    started = true;
+    addButton();
+    if (muted()) { audio.muted = true; paintButton(); return; }
+    if (audio.readyState < 2) {
+      audio.load();
+      audio.addEventListener("canplay", playAudio, { once: true });
+      return;
+    }
+    playAudio();
+  }
+
+  function attachStartListeners() {
+    if (startListenersAttached) return;
+    startListenersAttached = true;
+    window.addEventListener("am:opened", start);
+    // Fallback for any path where the envelope is not in play.
+    document.addEventListener("click", start, { once: true });
+    document.addEventListener("touchend", start, { once: true });
   }
 
   function init() {
@@ -133,12 +154,7 @@
     // and draw nothing rather than leaving a dead control on the page.
     audio.addEventListener("error", function () { audio = null; });
 
-    audio.addEventListener("canplay", function () {
-      window.addEventListener("am:opened", start);
-      // Fallback for any path where the envelope is not in play.
-      document.addEventListener("click", start, { once: true });
-      document.addEventListener("touchend", start, { once: true });
-    }, { once: true });
+    attachStartListeners();
   }
 
   if (document.body) init();
