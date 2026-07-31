@@ -257,6 +257,10 @@
 
       overlay.classList.add("is-open");
 
+      // Breaking the seal is a real user gesture, which is the one thing
+      // browsers require before audio may start. music.js listens for this.
+      try { window.dispatchEvent(new CustomEvent("am:opened")); } catch (e) {}
+
       // Phase 2: the envelope fades and the invitation grows to fill the
       // screen, so the site emerges from inside the card rather than simply
       // appearing behind the envelope. The transform has to be measured

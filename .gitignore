@@ -8,3 +8,7 @@ _assets/envelope/out/
 
 # macOS metadata
 .DS_Store
+
+# Audio: the licensed track goes here, untracked until one is chosen
+_assets/music.m4a
+_assets/*.mp4
