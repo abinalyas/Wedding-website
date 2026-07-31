@@ -21,18 +21,18 @@
 (function () {
   "use strict";
 
-  var SEEN_KEY = "am-envelope-seen";
   // Total time from the tap to the overlay being removed. Must stay in step
   // with the transition delays in the CSS below.
   var SEQUENCE_MS = 2750;
 
-  // Shown once per browser session — a guest who reloads, or comes back via
-  // the back button, goes straight to the invite rather than replaying this.
-  try {
-    if (window.sessionStorage && sessionStorage.getItem(SEEN_KEY)) return;
-  } catch (e) {
-    /* private mode / storage disabled — just play the intro */
-  }
+  // The envelope plays on every load, deliberately. It was previously gated
+  // behind a sessionStorage flag so it only ran once per tab, but that flag
+  // survives a reload — including a hard reload — so once it had been seen the
+  // intro was simply gone for the life of that tab, which makes the site look
+  // broken to anyone checking their own changes. Guests arrive once and the
+  // envelope is the front door, so replaying it costs little. To restore the
+  // old behaviour, bail out early when sessionStorage's "am-envelope-seen" is
+  // set and write that key in open().
 
   // Paper grain, as an inline SVG so the page stays self-contained. Laid over
   // the paper at low opacity; without it the envelope reads as flat plastic.
@@ -295,7 +295,6 @@
     function open() {
       if (opened) return;
       opened = true;
-      try { sessionStorage.setItem(SEEN_KEY, "1"); } catch (e) {}
 
       // is-done drives the closing fade/scale; its own CSS delay handles the
       // wait, so both classes can go on in the same frame.
