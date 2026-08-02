@@ -25,6 +25,8 @@
 
      body.webp    1210 x 878   envelope with the mouth open, no flap
      flap.webp    1210 x 611   the flap, apex down, hinge along its top edge
+     front.webp   1210 x 878   the front pocket, V notch cut out — the card
+                               slides up behind this
      seal.webp     407 x 405   the gold wax seal, whole
 
    The two source renders disagree about flap length (the folded-back flap in
@@ -46,8 +48,15 @@
   // seal does — holding the flap down rather than sitting above it.
   var SEAL_Y     = 0.62;
 
+  // The surface the envelope sits on, and the colour of the retracting panels.
+  var BACKDROP   = "#f1ede6";
+
   // Phase timings, in step with the transition delays in the CSS below.
   var REVEAL_AT_MS      = 1750;  // when the push-in begins
+  // Canva is started this far ahead of the window opening. It paints ~100ms
+  // after booting, so the site is on screen behind the card the instant the
+  // window starts to open — otherwise the hole would reveal a blank page.
+  var BOOT_LEAD_MS      = 250;
   var REVEAL_DUR_MS     = 1200;  // how long the push-in runs
   var REVEAL_ENV_SCALE  = 1.9;   // how far the envelope travels toward the viewer
   // Earliest the arrived card may fade. Set to the end of the push-in so the
@@ -73,7 +82,10 @@
     ".wenv{--env-w:min(88vw,470px,96vh);",
       "position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483647;",
       "display:flex;align-items:center;justify-content:center;",
-      "background:radial-gradient(120% 90% at 50% 42%,#faf8f4 0%,#f1ede6 55%,#e7e2d9 100%);",
+      // Flat, not a gradient: the reveal splits this backdrop into four panels that
+      // retract to open a window, and a gradient cannot be divided across four
+      // independently-scaled panels without showing seams.
+      "background:", BACKDROP, ";",
       "cursor:pointer;overscroll-behavior:none;touch-action:none;",
       "-webkit-tap-highlight-color:transparent;",
       // The overlay is focused on mount so it receives keys; it is a container,
@@ -82,7 +94,23 @@
       "opacity:1;transition:opacity .55s ease}",
     ".wenv.is-done{opacity:0}",
 
-    ".wenv__stage{position:relative;display:flex;flex-direction:column;align-items:center}",
+    ".wenv__stage{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center}",
+
+    // ---- the window -------------------------------------------------------
+    // Four panels framing a hole the size of the card. They retract to open the
+    // hole out to the full viewport, and the live site is simply behind them —
+    // so what grows out of the envelope IS the page, rather than a picture of a
+    // card that fades to reveal it.
+    ".wenv__shade{position:fixed;background:", BACKDROP, ";z-index:0;will-change:transform}",
+    // Once the panels are carrying the backdrop, the overlay must stop painting
+    // its own or it would cover the hole.
+    ".wenv.is-reveal{background:transparent}",
+    ".wenv.is-reveal .wenv__shade{transition:transform ", (REVEAL_DUR_MS/1000),
+      "s cubic-bezier(.36,0,.2,1)}",
+    ".wenv.is-reveal .wenv__shade--t{transform:scaleY(0)}",
+    ".wenv.is-reveal .wenv__shade--b{transform:scaleY(0)}",
+    ".wenv.is-reveal .wenv__shade--l{transform:scaleX(0)}",
+    ".wenv.is-reveal .wenv__shade--r{transform:scaleX(0)}",
 
     // ---- reveal -----------------------------------------------------------
     // A push-in on the whole tableau: everything travels toward the viewer, the
@@ -100,12 +128,13 @@
       // Scaling a filtered layer is the classic phone-judder trap, and the
       // contact shadow is meaningless once the envelope is airborne anyway.
       "filter:none}",
-    ".wenv.is-reveal .wenv__body,.wenv.is-reveal .wenv__flap{opacity:0;",
+    ".wenv.is-reveal .wenv__body,.wenv.is-reveal .wenv__front,",
+      ".wenv.is-reveal .wenv__flap{opacity:0;",
       "transition:opacity .5s ease .18s}",
     // The card's own transform is measured in JS: it has to undo the envelope's
     // scale, land dead centre, and cover whatever viewport it finds.
     ".wenv.is-reveal .wenv__card{transition:transform ", (REVEAL_DUR_MS/1000),
-      "s cubic-bezier(.36,0,.2,1);box-shadow:0 10px 60px rgba(104,86,60,.14)}",
+      "s cubic-bezier(.36,0,.2,1)}",
 
     // ---- envelope ---------------------------------------------------------
     ".wenv__env{position:relative;width:var(--env-w);",
@@ -123,14 +152,24 @@
     ".wenv__layer{position:absolute;left:0;top:0;width:100%;display:block;",
       "user-select:none;-webkit-user-drag:none;pointer-events:none}",
 
-    // The invitation, behind the envelope. It is only ever seen above the
-    // envelope's top edge, where the body artwork has no pixels.
-    ".wenv__card{position:absolute;left:5%;top:3%;width:90%;height:92%;z-index:2;",
-      "border-radius:2px;background:linear-gradient(#fffefb,#f7f4ec);",
-      "box-shadow:0 3px 14px rgba(104,86,60,.22);",
+    // The invitation, sitting INSIDE the envelope: in front of the interior,
+    // behind the front pocket. It used to be behind a single flat body layer,
+    // so it could only appear above the envelope's top edge and read as coming
+    // from behind rather than out of the mouth. Through the pocket's V notch
+    // it is now visible resting inside once the flap lifts, exactly as a real
+    // card is, and then slides up out of the opening.
+    ".wenv__card{position:absolute;left:5%;top:3%;width:90%;height:92%;z-index:3;",
+      "border-radius:2px;",
       "display:flex;align-items:flex-start;justify-content:center;overflow:hidden;",
       "transform:translateY(0);transition:transform 1s cubic-bezier(.33,0,.2,1) .72s}",
     ".wenv.is-open .wenv__card{transform:translateY(-66%)}",
+
+    // The printed face of the card. It fades at the reveal so the card becomes
+    // an empty frame — the window through which the site is already showing.
+    ".wenv__card-paper{position:absolute;top:0;right:0;bottom:0;left:0;border-radius:2px;",
+      "background:linear-gradient(#fffefb,#f7f4ec);box-shadow:0 3px 14px rgba(104,86,60,.22)}",
+    ".wenv.is-reveal .wenv__card-paper,.wenv.is-reveal .wenv__card-inner{opacity:0;",
+      "transition:opacity .4s ease}",
 
     ".wenv__card-inner{position:relative;text-align:center;color:#524a3d;",
       "font-family:Didot,'Bodoni MT','Cormorant Garamond',Garamond,Georgia,serif;",
@@ -145,14 +184,18 @@
     ".wenv__date{font-size:clamp(9px,2vw,11px);letter-spacing:.36em;text-indent:.36em;color:#93897a}",
 
     // Envelope body, drawn over the card so the card reads as sliding out.
-    ".wenv__body{z-index:3}",
+    // Envelope interior — behind the card.
+    ".wenv__body{z-index:2}",
+    // Front pocket — in front of the card, so the card slides out of the
+    // mouth rather than up from behind the whole envelope.
+    ".wenv__front{z-index:4}",
 
     // ---- flap -------------------------------------------------------------
     // Hinged on the envelope's top edge. Closed it covers the mouth; once past
     // vertical it drops behind the card, which is what lets the card pass over
     // it on the way out.
     ".wenv__flap{position:absolute;left:0;top:0;width:100%;",
-      "height:calc(var(--env-w)*", FLAP_RATIO.toFixed(4), ");z-index:4;",
+      "height:calc(var(--env-w)*", FLAP_RATIO.toFixed(4), ");z-index:5;",
       "transform-origin:top center;transform:rotateX(0deg);",
       "transition:transform 1.05s cubic-bezier(.5,0,.25,1) .24s,z-index 0s linear .78s}",
     ".wenv.is-open .wenv__flap{transform:rotateX(-179.4deg);z-index:1}",
@@ -173,7 +216,7 @@
       "top:", ((SEAL_Y * ENV_RATIO / FLAP_RATIO) * 100).toFixed(1), "%;",
       "width:calc(var(--env-w)*", SEAL_W, ");",
       "height:calc(var(--env-w)*", (SEAL_W*SEAL_RATIO).toFixed(4), ");",
-      "z-index:5;transform:translate(-50%,-50%) rotate(-3deg);",
+      "z-index:6;transform:translate(-50%,-50%) rotate(-3deg);",
       "padding:0;border:0;background:none;cursor:pointer;",
       "-webkit-tap-highlight-color:transparent;",
       "filter:drop-shadow(0 3px 4px rgba(104,80,36,.36));",
@@ -213,13 +256,16 @@
   var HTML = [
     "<div class='wenv__stage'>",
       "<div class='wenv__env'>",
-        "<div class='wenv__card'><div class='wenv__card-inner'>",
+        "<div class='wenv__card'><div class='wenv__card-paper'></div>",
+          "<div class='wenv__card-inner'>",
           "<div class='wenv__mono'>Together</div>",
           "<div class='wenv__names'>Abin &amp; Meera</div>",
           "<div class='wenv__rule'></div>",
           "<div class='wenv__date'>26 . 08 . 2026</div>",
         "</div></div>",
         "<img class='wenv__layer wenv__body' src='", BASE, "body.webp' alt='' ",
+          "fetchpriority='high' decoding='async'>",
+        "<img class='wenv__layer wenv__front' src='", BASE, "front.webp' alt='' ",
           "fetchpriority='high' decoding='async'>",
         "<div class='wenv__flap'>",
           "<img src='", BASE, "flap.webp' alt='' fetchpriority='high' decoding='async'>",
@@ -314,25 +360,54 @@
 
         card.style.transform =
           "translate(" + tx + "px," + ty + "px) scale(" + (cover / S) + ")";
-        overlay.classList.add("is-reveal");
+
+        // Frame the card with four backdrop panels, then retract them so the
+        // hole opens out to the whole viewport. The site is already painted
+        // behind, so the window shows the real page from the first frame. The
+        // hole does not have to track the card exactly — by now the card's
+        // paper has faded and only the hole is visible.
+        var vw = window.innerWidth, vh = window.innerHeight;
+        [["t", 0, 0, vw, r.top, "top"],
+         ["b", 0, r.bottom, vw, vh - r.bottom, "bottom"],
+         ["l", 0, r.top, r.left, r.height, "left"],
+         ["r", r.right, r.top, vw - r.right, r.height, "right"]
+        ].forEach(function (p) {
+          var el = document.createElement("div");
+          el.className = "wenv__shade wenv__shade--" + p[0];
+          el.style.left = p[1] + "px";
+          el.style.top = p[2] + "px";
+          el.style.width = Math.max(0, p[3]) + "px";
+          el.style.height = Math.max(0, p[4]) + "px";
+          el.style.transformOrigin = p[5];
+          overlay.appendChild(el);
+        });
+
+        // Let the panels paint at full size for one frame, otherwise they are
+        // created and scaled to zero in the same style recalculation and the
+        // window simply snaps open.
+        window.requestAnimationFrame(function () {
+          window.requestAnimationFrame(function () {
+            overlay.classList.add("is-reveal");
+          });
+        });
+        return;
       }, REVEAL_AT_MS);
 
       // Phase 3: the grown card fades, uncovering the site behind it. This
       // waits for the hero to exist so the card never fades onto a blank
       // screen, but no longer than HERO_WAIT_MS — if Canva is slow or has
       // failed, showing the page late beats holding a guest on the overlay.
+      // Start Canva just before the window opens. At the tap instead, the
+      // pearls would have flown most of the way in unseen; any later and the
+      // window would open onto a blank page.
+      var bootAt = window.setTimeout(function () {
+        if (window.__bootCanva) window.__bootCanva();
+      }, Math.max(0, REVEAL_AT_MS - BOOT_LEAD_MS));
+
       var t0 = Date.now();
-      var boots = false;
       var doneAt = window.setInterval(function () {
         var waited = Date.now() - t0;
         if (waited < REVEAL_MS) return;
-        // Canva starts here rather than at the tap, and measurably paints the
-        // hero about 100ms later (its bundles were preloaded in <head>, so
-        // this is execution time only). Starting it at the tap instead meant
-        // the pearls had already flown most of the way in by the time the card
-        // cleared; starting it now puts the whole entrance in front of a guest
-        // as the card fades away over them.
-        if (!boots) { boots = true; if (window.__bootCanva) window.__bootCanva(); return; }
         if (!heroPainted() && waited < HERO_WAIT_MS) return;
         window.clearInterval(doneAt);
         overlay.classList.add("is-done");
