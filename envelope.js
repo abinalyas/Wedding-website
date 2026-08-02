@@ -1,6 +1,6 @@
 /* Opening sequence for Abin & Meera's invite: a photographed wax-sealed
-   envelope covers the page; tapping breaks the seal, lifts the flap, slides the
-   invitation out, then dissolves to reveal the site underneath.
+   envelope covers the page; tapping releases the seal, lifts the flap, slides
+   the invitation out, then pushes in until the card becomes the site.
 
    Notes specific to this page:
    - Loaded as a plain <script> near the end of <body>, which runs BEFORE
@@ -25,7 +25,7 @@
 
      body.webp    1210 x 878   envelope with the mouth open, no flap
      flap.webp    1210 x 611   the flap, apex down, hinge along its top edge
-     seal-l/r     210 x 405    the seal split into two halves, 6px overlap
+     seal.webp     407 x 405   the gold wax seal, whole
 
    The two source renders disagree about flap length (the folded-back flap in
    the open render is 510px, the closed one 611px), so the flap is a single
@@ -47,7 +47,12 @@
   var SEAL_Y     = 0.62;
 
   // Phase timings, in step with the transition delays in the CSS below.
-  var REVEAL_MS    = 2500;  // earliest the grown card may start fading
+  var REVEAL_AT_MS      = 1750;  // when the push-in begins
+  var REVEAL_DUR_MS     = 1200;  // how long the push-in runs
+  var REVEAL_ENV_SCALE  = 1.9;   // how far the envelope travels toward the viewer
+  // Earliest the arrived card may fade. Set to the end of the push-in so the
+  // page is uncovered exactly as the movement settles.
+  var REVEAL_MS    = REVEAL_AT_MS + REVEAL_DUR_MS;
   var FADE_MS      = 600;   // the card's fade, after which the overlay goes
   // Cap on waiting for Canva to paint the hero. Past this the overlay lifts
   // regardless, so a slow or broken boot can never strand a guest on it.
@@ -80,16 +85,27 @@
     ".wenv__stage{position:relative;display:flex;flex-direction:column;align-items:center}",
 
     // ---- reveal -----------------------------------------------------------
-    // The site is revealed by growing the invitation itself until it fills the
-    // screen, then fading it. Previously the whole overlay just faded out, so
-    // the page appeared *behind* the envelope rather than coming out of it.
-    // The envelope fades first so the card is alone as it expands.
-    ".wenv.is-reveal .wenv__body,.wenv.is-reveal .wenv__flap,",
-      ".wenv.is-reveal .wenv__seal{opacity:0;transition:opacity .45s ease}",
-    // The exact transform is measured and set in JS, since it depends on the
-    // card's position on screen and the viewport it has to cover.
-    ".wenv.is-reveal .wenv__card{transition:transform 1s cubic-bezier(.4,0,.25,1);",
-      "box-shadow:0 10px 60px rgba(104,86,60,.16)}",
+    // A push-in on the whole tableau: everything travels toward the viewer, the
+    // envelope fading as it passes, and the card — nearest, and already out of
+    // the envelope — overtakes the frame and becomes the page.
+    //
+    // Scaling the card alone (the earlier version) read as a dissolve rather
+    // than an arrival, and pushing through the envelope's mouth instead would
+    // have meant travelling past the very thing the guest just took out, as
+    // well as blowing a 1210px image up tenfold. Growing the envelope as it
+    // goes is what sells this as camera movement rather than the envelope
+    // simply evaporating.
+    ".wenv.is-reveal .wenv__env{transform:scale(", REVEAL_ENV_SCALE, ");",
+      "transition:transform ", (REVEAL_DUR_MS/1000), "s cubic-bezier(.36,0,.2,1);",
+      // Scaling a filtered layer is the classic phone-judder trap, and the
+      // contact shadow is meaningless once the envelope is airborne anyway.
+      "filter:none}",
+    ".wenv.is-reveal .wenv__body,.wenv.is-reveal .wenv__flap{opacity:0;",
+      "transition:opacity .5s ease .18s}",
+    // The card's own transform is measured in JS: it has to undo the envelope's
+    // scale, land dead centre, and cover whatever viewport it finds.
+    ".wenv.is-reveal .wenv__card{transition:transform ", (REVEAL_DUR_MS/1000),
+      "s cubic-bezier(.36,0,.2,1);box-shadow:0 10px 60px rgba(104,86,60,.14)}",
 
     // ---- envelope ---------------------------------------------------------
     ".wenv__env{position:relative;width:var(--env-w);",
@@ -144,27 +160,35 @@
       "user-select:none;-webkit-user-drag:none;pointer-events:none}",
 
     // ---- wax seal ---------------------------------------------------------
-    ".wenv__seal{position:absolute;left:50%;top:", (SEAL_Y*100).toFixed(1), "%;",
+    // The seal is a child of the flap, so it lifts with it as one piece. Real
+    // wedding seals are self-adhesive and stuck to the flap only — you do not
+    // crack them open. This also lets the artwork be used whole; it used to be
+    // split down the middle into two falling halves, and a dead-straight split
+    // is not how wax breaks.
+    //
+    // Positioned within the flap rather than the envelope: the flap is
+    // FLAP_RATIO of the envelope's width tall, so the seal's centre — SEAL_Y
+    // of the envelope's HEIGHT — lands at this fraction of the flap.
+    ".wenv__seal{position:absolute;left:50%;",
+      "top:", ((SEAL_Y * ENV_RATIO / FLAP_RATIO) * 100).toFixed(1), "%;",
       "width:calc(var(--env-w)*", SEAL_W, ");",
       "height:calc(var(--env-w)*", (SEAL_W*SEAL_RATIO).toFixed(4), ");",
       "z-index:5;transform:translate(-50%,-50%) rotate(-3deg);",
       "padding:0;border:0;background:none;cursor:pointer;",
       "-webkit-tap-highlight-color:transparent;",
-      "filter:drop-shadow(0 3px 4px rgba(104,80,36,.36))}",
+      "filter:drop-shadow(0 3px 4px rgba(104,80,36,.36));",
+      // Two separate timings: a quick tilt as it unsticks, then a fade timed
+      // to the middle of the flap's swing.
+      "transition:transform .2s cubic-bezier(.3,0,.4,1),opacity .38s ease .58s}",
+    ".wenv__seal img{width:100%;height:100%;display:block;",
+      "user-select:none;-webkit-user-drag:none;pointer-events:none}",
     ".wenv__seal:focus-visible{outline:2px solid #b08d46;outline-offset:9px;border-radius:50%}",
-    // Once the halves have fallen away there is nothing left to ring, and a
-    // stray gold circle hanging in mid-air is very visible against the paper.
     ".wenv.is-open .wenv__seal{outline:none}",
-    // Each half is a little over half the seal so the join never shows a gap.
-    ".wenv__half{position:absolute;top:0;height:100%;width:51.6%;display:block;",
-      "user-select:none;-webkit-user-drag:none;pointer-events:none;",
-      "transition:transform .7s cubic-bezier(.34,.02,.5,1),opacity .7s ease .16s}",
-    ".wenv__half--l{left:0}",
-    ".wenv__half--r{right:0}",
-    // The halves fall away rather than fading in place — they tip, drop and
-    // rotate under gravity, and only then fade.
-    ".wenv.is-open .wenv__half--l{transform:translate(-34%,42%) rotate(-31deg);opacity:0}",
-    ".wenv.is-open .wenv__half--r{transform:translate(34%,48%) rotate(36deg);opacity:0}",
+    // The release: a small tilt and lift as the adhesive gives, then it rides
+    // the flap up and fades away through the second half of the rotation —
+    // past vertical you would be seeing the back of a domed gold object, which
+    // reads wrong, so it is gone before that.
+    ".wenv.is-open .wenv__seal{transform:translate(-50%,-52%) rotate(-8.5deg);opacity:0}",
 
     // ---- hint -------------------------------------------------------------
     ".wenv__hint{margin:clamp(16px,3.6vh,30px) 0 0;color:#9a8f7d;",
@@ -178,7 +202,7 @@
     // Guests who ask for less motion get the envelope, but it simply fades
     // rather than folding, sliding and scaling.
     "@media (prefers-reduced-motion:reduce){",
-      ".wenv,.wenv__stage,.wenv__card,.wenv__flap,.wenv__half,.wenv__env{",
+      ".wenv,.wenv__stage,.wenv__card,.wenv__flap,.wenv__seal,.wenv__env{",
         "transition-duration:.25s!important;transition-delay:0s!important}",
       ".wenv.is-done .wenv__stage{transform:none}",
       ".wenv.is-open .wenv__card{transform:translateY(0)}",
@@ -199,13 +223,10 @@
           "fetchpriority='high' decoding='async'>",
         "<div class='wenv__flap'>",
           "<img src='", BASE, "flap.webp' alt='' fetchpriority='high' decoding='async'>",
+          "<button type='button' class='wenv__seal' aria-label='Open the invitation'>",
+            "<img src='", BASE, "seal.webp' alt='' fetchpriority='high' decoding='async'>",
+          "</button>",
         "</div>",
-        "<button type='button' class='wenv__seal' aria-label='Open the invitation'>",
-          "<img class='wenv__half wenv__half--l' src='", BASE, "seal-l.webp' alt='' ",
-            "fetchpriority='high' decoding='async'>",
-          "<img class='wenv__half wenv__half--r' src='", BASE, "seal-r.webp' alt='' ",
-            "fetchpriority='high' decoding='async'>",
-        "</button>",
       "</div>",
       "<p class='wenv__hint'>Tap to open</p>",
     "</div>"
@@ -267,20 +288,34 @@
       // rather than written in CSS: it depends on where the card has slid to
       // and how much of the viewport it must cover.
       var revealAt = window.setTimeout(function () {
+        var env = overlay.querySelector(".wenv__env");
         var card = overlay.querySelector(".wenv__card");
         var r = card.getBoundingClientRect();
-        // Undo the slide to get the card's untransformed box, so the scale
-        // below is applied about its own centre predictably.
-        var h = r.height, w = r.width;
-        var top = r.top + 0.66 * h;
-        var cx = r.left + w / 2, cy = top + h / 2;
-        var dx = window.innerWidth / 2 - cx;
-        var dy = window.innerHeight / 2 - cy;
-        var scale = Math.max(window.innerWidth / w, window.innerHeight / h) * 1.08;
+        var er = env.getBoundingClientRect();
+
+        // The card is a child of the envelope, so the envelope's scale
+        // multiplies onto it. Everything below is worked out in the card's own
+        // pre-transform space and then divided back out by that scale.
+        var S = REVEAL_ENV_SCALE;
+        var w = r.width, h = r.height;
+        // Undo the slide to get the card's untransformed box — the transform
+        // set here replaces the slide rather than adding to it.
+        var cx = r.left + w / 2;
+        var cy = (r.top + 0.66 * h) + h / 2;
+        var ex = er.left + er.width / 2, ey = er.top + er.height / 2;
+
+        // The envelope scales about its own centre, which drags the card with
+        // it; this puts the card back in the middle of the screen afterwards.
+        var tx = (window.innerWidth / 2 - ex) / S + ex - cx;
+        var ty = (window.innerHeight / 2 - ey) / S + ey - cy;
+        // Cover the viewport, with a margin so no edge creeps in, then divide
+        // out the envelope's scale so the two do not compound.
+        var cover = Math.max(window.innerWidth / w, window.innerHeight / h) * 1.1;
+
         card.style.transform =
-          "translate(" + dx + "px," + dy + "px) scale(" + scale + ")";
+          "translate(" + tx + "px," + ty + "px) scale(" + (cover / S) + ")";
         overlay.classList.add("is-reveal");
-      }, 1750);
+      }, REVEAL_AT_MS);
 
       // Phase 3: the grown card fades, uncovering the site behind it. This
       // waits for the hero to exist so the card never fades onto a blank
