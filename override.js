@@ -341,6 +341,11 @@
   var RINGS_BAND_PADDING = 0.16;    // vertical breathing room, as a share of clip height
   var RINGS_FALLBACK_BG = "#efece6";
 
+  function ringsScroller() {
+    // The page does not scroll the window — Canva scrolls a nested container.
+    return document.querySelector(".ZRRuDw") || window;
+  }
+
   function ringsSectionTexture(section) {
     // Every Canva section paints its own full-bleed copy of the paper texture.
     // Finding it lets the band be given the same paper rather than a guess.
@@ -373,12 +378,13 @@
   }
 
   function addRingsAnimation() {
-    // The band goes between the reception section and the one after it.
+    // The band closes the invitation: it is the last thing on the page, so the
+    // rings come together exactly as a guest reaches the bottom. Sitting it
+    // mid-page meant the animation finished as the band left the top of the
+    // screen, which is well before anyone had finished reading.
     var sections = Array.from(document.querySelectorAll("section"));
-    var reception = sections.find(function (s) {
-      return s.textContent.indexOf("6:30 PM") !== -1;
-    });
-    if (!reception) return; // Canva has not rendered this section yet.
+    if (!sections.length) return; // Canva has not rendered yet.
+    var host = sections[sections.length - 1];
 
     var band = document.querySelector('[data-custom-clone="rings-band"]');
     var video = band ? band.querySelector("video") : null;
@@ -402,7 +408,7 @@
       video.setAttribute("aria-hidden", "true");
 
       band.appendChild(video);
-      reception.parentNode.insertBefore(band, reception.nextSibling);
+      host.parentNode.insertBefore(band, host.nextSibling);
     }
 
     var bandWidth = band.getBoundingClientRect().width;
@@ -419,12 +425,21 @@
     video.style.cssText =
       "width:" + clipWidth + "px;height:auto;display:block;" +
       "mix-blend-mode:multiply;pointer-events:none;";
-    band.style.height = (clipHeight * (1 + RINGS_BAND_PADDING * 2)) + "px";
+
+    // One viewport tall, with the clip centred. That is what gives the scrub a
+    // full screen of travel to play over — as the last element on the page, a
+    // band only as tall as the clip would compress the whole five seconds into
+    // its own 150px and snap. It also means that at the very bottom of the page
+    // the band exactly fills the screen and the rings sit dead centre.
+    var sc = ringsScroller();
+    var viewportH = (sc === window ? window.innerHeight : sc.clientHeight)
+      || window.innerHeight;
+    band.style.height = viewportH + "px";
 
     // Match the band to the paper it sits between. Sampled once and remembered,
     // since it cannot change without the artwork changing.
     if (!band.__bgSet) {
-      var tex = ringsSectionTexture(reception);
+      var tex = ringsSectionTexture(host);
       if (tex) {
         var colour = ringsSampleColour(tex);
         if (colour) {
@@ -452,17 +467,35 @@
     if (band.__scrubBound) return;
     band.__scrubBound = true;
 
-    var scroller = document.querySelector(".ZRRuDw") || window;
+    var scroller = ringsScroller();
     var queued = false;
 
     function apply() {
       queued = false;
       var d = video.duration;
       if (!d || !isFinite(d)) return;
+      // Run from the moment the band first appears to the moment the page can
+      // scroll no further, so the rings meet exactly as a guest reaches the
+      // bottom. The old mapping finished when the band cleared the TOP of the
+      // screen — as the last element it never does, so the rings would have
+      // stopped part-joined; mid-page it meant they joined far too early.
+      var p;
+      var win = scroller === window;
+      var vh = win ? window.innerHeight : scroller.clientHeight;
+      var maxScroll = win
+        ? (document.documentElement.scrollHeight - vh)
+        : (scroller.scrollHeight - scroller.clientHeight);
+      var scrollTop = win ? window.pageYOffset : scroller.scrollTop;
       var r = band.getBoundingClientRect();
-      var vh = window.innerHeight;
-      // 0 as the band enters from the bottom, 1 as it leaves past the top.
-      var p = (vh - r.top) / (vh + r.height);
+      var bandTop = scrollTop + r.top - (win ? 0 : scroller.getBoundingClientRect().top);
+      var start = bandTop - vh;   // band's top edge just entering from below
+      if (maxScroll - start > 40) {
+        p = (scrollTop - start) / (maxScroll - start);
+      } else {
+        // Degenerate (band not last, or page too short to scroll) — fall back
+        // to its travel across the viewport.
+        p = (vh - r.top) / (vh + r.height);
+      }
       p = Math.max(0, Math.min(1, p));
       var t = p * d;
       // Seeking costs more than it is worth for sub-frame moves.
