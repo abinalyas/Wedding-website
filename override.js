@@ -340,6 +340,12 @@
   var RINGS_WIDTH_FRACTION = 0.46;  // clip width, as a share of the band's width
   var RINGS_BAND_PADDING = 0.16;    // vertical breathing room, as a share of clip height
   var RINGS_FALLBACK_BG = "#efece6";
+  // How much of a screen the rings get to play over. A full screen read as
+  // dead space and risked guests stopping before they reached the bottom, so
+  // the band is a little over half a screen: the rings come into view sooner,
+  // the closing section stays visible above them, and the scrub still has
+  // enough travel not to snap.
+  var RINGS_RUNWAY = 0.55;
 
   function ringsScroller() {
     // The page does not scroll the window — Canva scrolls a nested container.
@@ -375,6 +381,50 @@
     } catch (e) {
       return null;
     }
+  }
+
+  // Canva leaves a long empty run between the reception's "Open map" button and
+  // the couple photos below — about 180px on a phone. This pulls the following
+  // section up over most of it. A negative margin on the section is deliberate:
+  // the alternative is editing the inline heights Canva writes onto five nested
+  // wrappers, which it rewrites on every re-render.
+  var GAP_KEEP_FRACTION = 0.11;  // empty space to keep, as a share of viewport
+  var GAP_KEEP_MIN = 56;
+
+  function tightenReceptionGap() {
+    // Anchored on the "Open map" button, which is genuinely the lowest thing in
+    // the section. Measuring the section's lowest mounted child instead looks
+    // more robust but is not: Canva mounts contents progressively and patch()
+    // builds this button late, so an early reading finds only the "6:30 PM"
+    // text, reports ~540px of empty space where there is really ~180px, and
+    // over-pulls. Waiting for the button means the gap simply stays as Canva
+    // left it until the measurement can be trusted — never a wrong-looking
+    // intermediate that has to be walked back on screen.
+    var button = document.querySelector('[data-custom-clone="map-button"]');
+    if (!button) return;
+    var secs = Array.from(document.querySelectorAll("section"));
+    var reception = secs.find(function (s) { return s.textContent.indexOf("6:30 PM") !== -1; });
+    if (!reception || !reception.contains(button)) return;
+    var next = reception.nextElementSibling;
+    if (!next || next.tagName !== "SECTION") return;
+
+    var br = button.getBoundingClientRect();
+    var nr = next.getBoundingClientRect();
+    var sr = reception.getBoundingClientRect();
+    if (!(br.height > 4) || !(nr.height > 40) || !(sr.height > 80)) return;
+
+    // Steer towards the target rather than computing it once: the section's
+    // own height changes with Canva's breakpoints, and this needs no clearing
+    // of the margin to re-measure.
+    var keep = Math.max(GAP_KEEP_MIN, window.innerHeight * GAP_KEEP_FRACTION);
+    var delta = (nr.top - br.bottom) - keep;
+    if (Math.abs(delta) < 4) return;
+
+    var current = parseFloat(next.style.marginTop) || 0;
+    // Never push it below where Canva put it, and never pull more than half the
+    // section, whatever a bad reading might ask for.
+    var wanted = Math.max(-sr.height * 0.5, Math.min(0, current - delta));
+    next.style.marginTop = Math.round(wanted) + "px";
   }
 
   function addRingsAnimation() {
@@ -426,15 +476,14 @@
       "width:" + clipWidth + "px;height:auto;display:block;" +
       "mix-blend-mode:multiply;pointer-events:none;";
 
-    // One viewport tall, with the clip centred. That is what gives the scrub a
-    // full screen of travel to play over — as the last element on the page, a
-    // band only as tall as the clip would compress the whole five seconds into
-    // its own 150px and snap. It also means that at the very bottom of the page
-    // the band exactly fills the screen and the rings sit dead centre.
+    // The band is the scrub's runway. As the last element on the page nothing
+    // can be scrolled past it, so its height IS the travel the five seconds
+    // play over — a band only as tall as the clip would compress them into
+    // 150px and snap.
     var sc = ringsScroller();
     var viewportH = (sc === window ? window.innerHeight : sc.clientHeight)
       || window.innerHeight;
-    band.style.height = viewportH + "px";
+    band.style.height = Math.round(viewportH * RINGS_RUNWAY) + "px";
 
     // Match the band to the paper it sits between. Sampled once and remembered,
     // since it cannot change without the artwork changing.
@@ -650,6 +699,7 @@
     addCallLink();
     fitHeadingOneLine("Before the wedding");
     swapIntroCoupleImages();
+    tightenReceptionGap();
     addRingsAnimation();
   }
 
