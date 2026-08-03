@@ -308,6 +308,40 @@
 
     overlay.focus({ preventScroll: true });
 
+
+  function landOnNames() {
+    // Canva's desktop layout is a fixed ~2604px-tall hero, far taller than a
+    // laptop viewport, and the couple's names sit at 927..1612 within it. At
+    // scroll 0 a guest therefore arrives on pearls and empty paper with "Abin"
+    // just below the fold and "Meera" nowhere in sight. The names are only
+    // 685px tall, so they fit comfortably — this simply lands on them.
+    //
+    // Note this is not a zoom problem and predates the envelope: Canva's
+    // desktop sizing barely varies with viewport width (a pearl is 250px at
+    // 1350 and 256px at 1900), so the design is just authored large. Scaling
+    // the whole page down would fix it too, but that means transforming
+    // Canva's scroll container, which is the most fragile thing on this site.
+    //
+    // On a phone the hero is 731px against an 812px viewport, so everything is
+    // already visible and this leaves the scroll alone.
+    try {
+      var sc = document.querySelector(".ZRRuDw");
+      var hero = document.querySelector("section");
+      if (!sc || !hero) return;
+      var names = Array.from(hero.querySelectorAll("p,span,div")).filter(function (e) {
+        return e.children.length === 0 && /^(abin|meera)$/i.test(e.textContent.trim());
+      });
+      if (names.length < 2) return;
+      var tops = names.map(function (e) { return e.getBoundingClientRect().top; });
+      var bottoms = names.map(function (e) { return e.getBoundingClientRect().bottom; });
+      var top = Math.min.apply(null, tops), bottom = Math.max.apply(null, bottoms);
+      var vh = window.innerHeight;
+      if (bottom - top > vh) return;          // cannot help; leave it alone
+      if (top >= 0 && bottom <= vh) return;   // already fully visible (phones)
+      sc.scrollTop = Math.max(0, sc.scrollTop + ((top + bottom) / 2 - vh / 2));
+    } catch (e) {}
+  }
+
     // Canva has not started yet — canva-boot.js is holding its bundles so the
     // hero's pearls fly in while a guest is actually looking at the page
     // rather than behind the envelope. Poll for the hero appearing so the
@@ -381,6 +415,10 @@
           el.style.transformOrigin = p[5];
           overlay.appendChild(el);
         });
+
+        // The window is about to show the live page, so put the page where a
+        // guest should arrive first.
+        landOnNames();
 
         // Let the panels paint at full size for one frame, otherwise they are
         // created and scaled to zero in the same style recalculation and the
