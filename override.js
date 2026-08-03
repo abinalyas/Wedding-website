@@ -321,119 +321,188 @@
   // backdrop leaves the backdrop untouched, so the studio background disappears
   // into whatever is behind it while the gold rings stay gold. This only works
   // while nothing between the video and that backdrop creates its own stacking
-  // context, so the video must NOT sit inside a positioned / z-indexed /
+  // context, so the clip must NOT sit inside a positioned / z-indexed /
   // opacity'd wrapper.
   //
-  // The full frame is used — no clip-path. The animation is a slow zoom-in and
-  // by the end of the loop the rings very nearly fill the frame, so cropping
-  // the edges (an earlier attempt, to tighten the framing) clipped the rings
-  // themselves for the back half of the loop. The generator's watermark, which
-  // was the other reason to crop, is gone from the clip itself: it was removed
-  // with ffmpeg's delogo, having first confirmed the rings never enter that
-  // corner (max saturation there is 5 across all 121 frames, vs 106 for gold).
-  var RINGS_ASPECT = 1088 / 720; // clip's intrinsic ratio; re-read once metadata loads
-  var RINGS_MAX_WIDTH = 520;
-  var RINGS_GAP_MARGIN = 34; // breathing room so the rings clear the button above
-  // Share of the ceremony section's height that sits empty below its "Open map"
-  // button — measured at desktop (163px of 2298px) and proportional across
-  // Canva's breakpoints, since Canva scales a section's contents with its box.
-  var RINGS_GAP_FRACTION = 163 / 2298;
-  // The reception section that follows has its own empty strip above the
-  // "Reception" heading (75px of 2191px). The clip is centred across the
-  // boundary so it can use both, which is the only way to make it meaningfully
-  // larger. Growing the ceremony section instead was tried and abandoned: its
-  // height is duplicated across five nested Canva wrappers, all of which would
-  // have to be rewritten every tick against Canva's own re-hydration.
-  var RINGS_RECEPTION_TOP_FRACTION = 75 / 2191;
+  // It sits in a band of its own between the reception and details sections —
+  // below the reception's "Open map" button, above the couple photos.
+  //
+  // An earlier version overlaid it inside a section instead, using a negative
+  // margin so it took no layout height, which avoided the band's background
+  // having to match anything. That worked on desktop and failed completely on
+  // phones: Canva's sections are far shorter relative to their width there (the
+  // ceremony section is 681px tall at 375px wide, against 2298px at desktop),
+  // so the free space inside them collapses to about 38px and there is simply
+  // nowhere to overlay. Worse, the old code bailed out when the space was too
+  // small WITHOUT having styled the video, leaving it at its intrinsic 1088px
+  // on a 375px screen. Hence a real band, and a background sampled to match.
+  var RINGS_SRC = "rings-scroll.mp4";
+  var RINGS_WIDTH_FRACTION = 0.46;  // clip width, as a share of the band's width
+  var RINGS_BAND_PADDING = 0.16;    // vertical breathing room, as a share of clip height
+  var RINGS_FALLBACK_BG = "#efece6";
+
+  function ringsSectionTexture(section) {
+    // Every Canva section paints its own full-bleed copy of the paper texture.
+    // Finding it lets the band be given the same paper rather than a guess.
+    var sr = section.getBoundingClientRect();
+    if (!(sr.width > 0)) return null;
+    return Array.from(section.querySelectorAll("img")).find(function (im) {
+      var r = im.getBoundingClientRect();
+      return r.width >= sr.width * 0.9 && r.height >= sr.height * 0.5;
+    }) || null;
+  }
+
+  function ringsSampleColour(img) {
+    // Read the texture's average colour straight out of the image, so the band
+    // matches the sections exactly instead of relying on a hardcoded cream that
+    // drifts as soon as anything about the artwork changes. Same-origin, so the
+    // canvas is not tainted.
+    try {
+      if (!img.complete || !img.naturalWidth) return null;
+      var c = document.createElement("canvas");
+      c.width = 8; c.height = 8;
+      var ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, 8, 8);
+      var d = ctx.getImageData(0, 0, 8, 8).data;
+      var r = 0, g = 0, b = 0, n = 0;
+      for (var i = 0; i < d.length; i += 4) { r += d[i]; g += d[i+1]; b += d[i+2]; n++; }
+      return "rgb(" + Math.round(r/n) + "," + Math.round(g/n) + "," + Math.round(b/n) + ")";
+    } catch (e) {
+      return null;
+    }
+  }
 
   function addRingsAnimation() {
-    // Drop the wedding-rings clip into the empty space at the bottom of the
-    // ceremony section, below its "Open map" button.
-    //
-    // Deliberately NOT inserted as its own full-width band between the two
-    // sections: each Canva section paints its own copy of the paper-texture
-    // background image, restarting the texture's gradient at every section
-    // boundary, so a separate band can never line up with its neighbours and
-    // always shows as a visible seam. Overlaying the clip inside a section
-    // instead means it blends against that section's real background and no
-    // seam exists at all. The wrapper is zero-height and the video is pulled
-    // up over the section with a negative margin, so it adds no layout height.
-    var ceremonySection = Array.from(document.querySelectorAll("section")).find(function (s) {
-      return s.textContent.indexOf("3:00 PM") !== -1;
+    // The band goes between the reception section and the one after it.
+    var sections = Array.from(document.querySelectorAll("section"));
+    var reception = sections.find(function (s) {
+      return s.textContent.indexOf("6:30 PM") !== -1;
     });
-    if (!ceremonySection) return; // Canva hasn't rendered this section yet.
+    if (!reception) return; // Canva has not rendered this section yet.
 
-    var wrapper = document.querySelector('[data-custom-clone="rings-wrapper"]');
-    var video = wrapper ? wrapper.querySelector("video") : null;
+    var band = document.querySelector('[data-custom-clone="rings-band"]');
+    var video = band ? band.querySelector("video") : null;
 
-    if (!wrapper || !wrapper.isConnected) {
-      wrapper = document.createElement("div");
-      wrapper.setAttribute("data-custom-clone", "rings-wrapper");
-      // Zero height + overflow visible: contributes nothing to the page flow,
-      // it only centres the video horizontally. No position/z-index/opacity
-      // here, or it would isolate the video's multiply blend (see above).
-      wrapper.style.cssText =
-        "height: 0; overflow: visible; display: flex; justify-content: center; align-items: flex-start;";
+    if (!band || !band.isConnected) {
+      band = document.createElement("div");
+      band.setAttribute("data-custom-clone", "rings-band");
+      band.style.cssText =
+        "width:100%;display:flex;align-items:center;justify-content:center;" +
+        "overflow:hidden;background:" + RINGS_FALLBACK_BG + ";";
 
       video = document.createElement("video");
-      video.src = "rings-animation.mp4";
-      video.autoplay = true;
-      video.loop = true;
+      video.src = RINGS_SRC;
       video.muted = true;
-      video.playsInline = true; // iOS: play inline instead of going fullscreen
+      video.loop = false;          // driven by scroll position, not by playback
+      video.autoplay = false;
+      video.preload = "auto";
+      video.playsInline = true;    // iOS: never go fullscreen
       video.setAttribute("playsinline", "");
       video.setAttribute("muted", "");
-      // Some browsers reset a media element to paused when it is re-parented,
-      // and a loop that has to seek back to 0 fails on hosts that don't answer
-      // Range requests. Nudge it back into playing on both events.
-      video.addEventListener("ended", function () {
-        video.currentTime = 0;
-        var p = video.play();
-        if (p && p.catch) p.catch(function () {});
-      });
+      video.setAttribute("aria-hidden", "true");
 
-      wrapper.appendChild(video);
-      ceremonySection.parentNode.insertBefore(wrapper, ceremonySection.nextSibling);
+      band.appendChild(video);
+      reception.parentNode.insertBefore(band, reception.nextSibling);
     }
 
-    if (video.videoWidth && video.videoHeight) RINGS_ASPECT = video.videoWidth / video.videoHeight;
+    var bandWidth = band.getBoundingClientRect().width;
+    if (!(bandWidth > 80)) return; // not laid out yet
 
-    // Size the empty space from each section's height rather than by measuring
-    // the "Open map" pill directly. Canva virtualizes offscreen sections and
-    // keeps degenerate duplicates of some text nodes, so a text-anchored
-    // measurement intermittently reads a wrong position (and once wrote a
-    // -1204px offset that parked the clip over the button). Section heights are
-    // always-present measurements, and the empty strips are a stable share of
-    // them across Canva's breakpoints.
-    var ceremonyHeight = ceremonySection.getBoundingClientRect().height;
-    if (!(ceremonyHeight > 400)) return; // section not laid out yet
-    var above = ceremonyHeight * RINGS_GAP_FRACTION;
-
-    // The wrapper sits exactly on the section boundary, so the strip below it
-    // belongs to the next section. Fall back to using only the space above if
-    // that section isn't there.
-    var next = wrapper.nextElementSibling;
-    var nextHeight = next && next.tagName === "SECTION" ? next.getBoundingClientRect().height : 0;
-    var below = nextHeight > 400 ? nextHeight * RINGS_RECEPTION_TOP_FRACTION : 0;
-
-    // Fit the whole frame in the combined empty band.
-    var layoutHeight = Math.min(above + below - RINGS_GAP_MARGIN, RINGS_MAX_WIDTH / RINGS_ASPECT);
-    if (!(layoutHeight > 40)) return;
-    var width = layoutHeight * RINGS_ASPECT;
+    // Size from the band's WIDTH, which tracks the viewport predictably, rather
+    // than from a share of a section's height — that is what broke on phones.
+    var aspect = (video.videoWidth && video.videoHeight)
+      ? video.videoWidth / video.videoHeight
+      : 560 / 374;
+    var clipWidth = bandWidth * RINGS_WIDTH_FRACTION;
+    var clipHeight = clipWidth / aspect;
 
     video.style.cssText =
-      "width: " + width + "px; height: auto; display: block;" +
-      "mix-blend-mode: multiply;" +
-      // Sits on top of the sections, so let clicks through to the button above.
-      "pointer-events: none;" +
-      // With no margin the video's top would sit on the section boundary; pull
-      // it up so the frame is centred in the band that spans the boundary.
-      "margin-top: " + ((below - above) / 2 - layoutHeight / 2) + "px;";
+      "width:" + clipWidth + "px;height:auto;display:block;" +
+      "mix-blend-mode:multiply;pointer-events:none;";
+    band.style.height = (clipHeight * (1 + RINGS_BAND_PADDING * 2)) + "px";
 
-    if (video.paused && video.readyState >= 2) {
-      var play = video.play();
-      if (play && play.catch) play.catch(function () {});
+    // Match the band to the paper it sits between. Sampled once and remembered,
+    // since it cannot change without the artwork changing.
+    if (!band.__bgSet) {
+      var tex = ringsSectionTexture(reception);
+      if (tex) {
+        var colour = ringsSampleColour(tex);
+        if (colour) {
+          band.style.backgroundColor = colour;
+          // The same texture at the same rendered scale, so the band carries the
+          // paper's grain and not just its colour.
+          var tr = tex.getBoundingClientRect();
+          band.style.backgroundImage = "url('" + tex.getAttribute("src") + "')";
+          band.style.backgroundSize = Math.round(tr.width) + "px " + Math.round(tr.height) + "px";
+          band.style.backgroundPosition = "center center";
+          band.style.backgroundRepeat = "no-repeat";
+          band.__bgSet = true;
+        }
+      }
     }
+
+    ringsScrub(band, video);
+  }
+
+  function ringsScrub(band, video) {
+    // Scrub the clip from the band's travel through the viewport: scrolling down
+    // runs the rings forward, scrolling up runs them backward. The clip is
+    // encoded with every frame a keyframe so seeking lands anywhere cheaply — a
+    // normal encode has about six keyframes and would snap between them.
+    if (band.__scrubBound) return;
+    band.__scrubBound = true;
+
+    var scroller = document.querySelector(".ZRRuDw") || window;
+    var queued = false;
+
+    function apply() {
+      queued = false;
+      var d = video.duration;
+      if (!d || !isFinite(d)) return;
+      var r = band.getBoundingClientRect();
+      var vh = window.innerHeight;
+      // 0 as the band enters from the bottom, 1 as it leaves past the top.
+      var p = (vh - r.top) / (vh + r.height);
+      p = Math.max(0, Math.min(1, p));
+      var t = p * d;
+      // Seeking costs more than it is worth for sub-frame moves.
+      if (Math.abs(t - video.currentTime) > d / 121) {
+        try { video.currentTime = t; } catch (e) {}
+      }
+    }
+    function onScroll() {
+      if (queued) return;
+      queued = true;
+      // rAF coalesces the burst of scroll events into one seek per frame, but
+      // it does not run at all in some contexts (throttled or non-compositing
+      // pages), which would leave the clip frozen. The timer is a floor.
+      var raf = window.requestAnimationFrame(run);
+      var timer = window.setTimeout(run, 120);
+      function run() {
+        window.cancelAnimationFrame(raf);
+        window.clearTimeout(timer);
+        apply();
+      }
+    }
+
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    if (video.readyState >= 1) apply();
+    else video.addEventListener("loadedmetadata", apply, { once: true });
+
+    // iOS will not render a frame for a video that has never played, so a
+    // scrubbed-only clip stays blank there. The envelope's tap is a real user
+    // gesture, which is the one moment play() is allowed; playing and pausing
+    // immediately primes the decoder without anything being seen to play.
+    function prime() {
+      var pr = video.play();
+      if (pr && pr.then) pr.then(function () { video.pause(); apply(); })
+                           .catch(function () {});
+      else { video.pause(); apply(); }
+    }
+    window.addEventListener("am:opened", prime, { once: true });
+    document.addEventListener("touchend", prime, { once: true });
+    document.addEventListener("click", prime, { once: true });
   }
 
   function removeWishesSection() {

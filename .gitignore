@@ -11,3 +11,6 @@ _assets/envelope/out/
 
 # Audio: keep local media files out of source control unless explicitly needed
 _assets/*.mp4
+
+# Rings clip source render (the encoded rings-scroll.mp4 is what ships)
+ring-video.mp4
