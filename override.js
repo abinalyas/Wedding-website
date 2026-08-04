@@ -336,26 +336,6 @@
   // them. Cropping also removed the generator's watermark, which sat below the
   // rings and is simply outside the new frame.
   var RINGS_SRC = "rings-inline.mp4";
-  // The same clip with the white studio background baked into a real alpha
-  // channel (HEVC + alpha), so it needs no blend mode at all.
-  //
-  // Safari only, for two reasons. It is the engine that needs it: an element
-  // with mix-blend-mode cannot be given its own compositor layer, so it has to
-  // be repainted on the main thread on every scrolled frame, and that is where
-  // iOS is weakest — the rings visibly stepped up the screen while the names
-  // beside them, which scroll on the compositor, glided. And it is the only
-  // engine that decodes alpha HEVC; Chrome reports it can play "hvc1" on macOS
-  // but ignores the alpha layer, which would paint the rings on an opaque
-  // block, so the check is deliberately engine-based and not canPlayType alone.
-  //
-  // Everywhere else keeps the smaller clip and the blend, which measures fine.
-  var RINGS_ALPHA_SRC = "rings-alpha.mp4";
-  var RINGS_WANT_ALPHA = (function () {
-    var ua = navigator.userAgent;
-    if (!/Safari/.test(ua) || /Chrome|Chromium|Android|Edg\//.test(ua)) return false;
-    var probe = document.createElement("video");
-    return !!probe.canPlayType('video/mp4; codecs="hvc1"');
-  })();
   var RINGS_ASPECT_FALLBACK = 600 / 240;
   // How much taller than the "and" artwork the rings may be. The names' text
   // boxes carry line-height padding well beyond the glyphs, so the visual gap
@@ -475,18 +455,7 @@
         "pointer-events:none;";
 
       video = document.createElement("video");
-      video.src = RINGS_WANT_ALPHA ? RINGS_ALPHA_SRC : RINGS_SRC;
-      // If the alpha clip will not decode after all, drop back to the original
-      // and put the blend back, rather than leaving the rings sitting on an
-      // opaque block.
-      if (RINGS_WANT_ALPHA) {
-        video.addEventListener("error", function fallback() {
-          video.removeEventListener("error", fallback);
-          video.style.mixBlendMode = "multiply";
-          video.src = RINGS_SRC;
-          video.load();
-        });
-      }
+      video.src = RINGS_SRC;
       video.muted = true;
       video.loop = false;        // position on screen drives it, not playback
       video.autoplay = false;
@@ -495,8 +464,7 @@
       video.setAttribute("playsinline", "");
       video.setAttribute("muted", "");
       video.setAttribute("aria-hidden", "true");
-      video.style.cssText = "display:block;pointer-events:none;" +
-        (RINGS_WANT_ALPHA ? "" : "mix-blend-mode:multiply;");
+      video.style.cssText = "display:block;mix-blend-mode:multiply;pointer-events:none;";
 
       band.appendChild(video);
       // The "and" artwork stays in the DOM, just hidden — restoring it is one
