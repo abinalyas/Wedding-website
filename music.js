@@ -68,6 +68,12 @@
     }, 50);
   }
 
+  function removeButton() {
+    if (!button) return;
+    if (button.parentNode) button.parentNode.removeChild(button);
+    button = null;
+  }
+
   function addButton() {
     if (button) return;
     var style = document.createElement("style");
@@ -146,13 +152,24 @@
     audio = new Audio();
     audio.src = SRC;
     audio.loop = true;
-    audio.preload = "auto";
+    // "none", not "auto". The track is several megabytes and this runs at page
+    // load, so preloading it put a multi-megabyte download on the wire while the
+    // guest was still looking at the envelope — competing directly with every
+    // photograph on the page for a phone's bandwidth, and making the images
+    // crawl in. Nothing needs the audio until the envelope is opened, and
+    // start() already calls load() and waits for canplay when that happens.
+    audio.preload = "none";
     audio.volume = 0;
     audio.setAttribute("playsinline", "");
 
-    // No track in place yet (or it failed to load) — stay completely silent
-    // and draw nothing rather than leaving a dead control on the page.
-    audio.addEventListener("error", function () { audio = null; });
+    // No track in place (or it failed to load) — stay completely silent and
+    // draw nothing rather than leaving a dead control on the page. With
+    // preload "none" nothing is fetched until start(), so this now fires after
+    // the button exists and has to take it back down again.
+    audio.addEventListener("error", function () {
+      audio = null;
+      removeButton();
+    });
 
     attachStartListeners();
   }

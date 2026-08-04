@@ -44,6 +44,28 @@
   }, true);
 })();
 
+/* Safety net for the WebP photographs.
+
+   The six custom photographs ship as WebP because they are photographs and PNG
+   was costing 4.6MB where WebP costs 0.6MB — the single biggest reason the page
+   was slow to show its images on a phone. The original PNGs are still in the
+   repo, so if a WebP ever fails to load — an old browser, a bad transfer, some
+   behaviour of Canva's runtime not anticipated here — fall straight back to the
+   PNG rather than leaving a hole where a photo should be.
+
+   Capture phase, because "error" from an <img> does not bubble. */
+(function () {
+  document.addEventListener("error", function (e) {
+    var el = e && e.target;
+    if (!el || el.tagName !== "IMG") return;
+    var src = el.getAttribute("src") || "";
+    if (src.indexOf("custom/") === -1 || src.indexOf(".webp") === -1) return;
+    if (el.__webpFellBack) return;   // only ever swap once
+    el.__webpFellBack = true;
+    el.src = src.replace(/\.webp(\?|$)/, ".png$1");
+  }, true);
+})();
+
 /* Safari-specific image replacement fix.
    Replace media folder image URLs with custom folder URLs. */
 (function () {
@@ -55,10 +77,10 @@
       var args = Array.prototype.slice.call(arguments);
       if (args[0] && typeof args[0] === 'string') {
         args[0] = args[0]
-          .replace('8467e2714c5ea4e324f50a3489dbc008.png', 'custom/auditorium.png')
-          .replace('38734efc5828800bfe3ee993e21f1550.png', 'custom/church.png')
-          .replace('c852da63dec521c48a58aa96b6db10b1.png', 'custom/couple-1.png')
-          .replace('943ae7beed07668ecf162e39ff1904b3.png', 'custom/couple-2.png');
+          .replace('8467e2714c5ea4e324f50a3489dbc008.png', 'custom/auditorium.webp')
+          .replace('38734efc5828800bfe3ee993e21f1550.png', 'custom/church.webp')
+          .replace('c852da63dec521c48a58aa96b6db10b1.png', 'custom/couple-1.webp')
+          .replace('943ae7beed07668ecf162e39ff1904b3.png', 'custom/couple-2.webp');
       }
       return originalFetch.apply(window, args);
     };
@@ -272,7 +294,7 @@
     //    each venue instead of the generic stock image both used to share.
     //    Re-set every tick: if Canva regenerated the ceremony <img>, it
     //    would otherwise silently revert to the generic stock photo.
-    photoImg.src = "_assets/custom/church.png";
+    photoImg.src = "_assets/custom/church.webp";
 
     var photoClone = receptionSection.querySelector('[data-custom-clone="photo"]');
     if (!photoClone || !photoClone.isConnected) {
@@ -280,7 +302,7 @@
       photoClone.removeAttribute("id");
       photoClone.setAttribute("data-custom-clone", "photo");
       var cloneImg = photoClone.querySelector("img");
-      if (cloneImg) cloneImg.src = "_assets/custom/auditorium.png";
+      if (cloneImg) cloneImg.src = "_assets/custom/auditorium.webp";
       receptionSection.appendChild(photoClone);
     }
     // Centered horizontally under the "Reception" heading (the ceremony's
@@ -720,8 +742,8 @@
     // design rotation angle rather than by filename. Re-applied every tick
     // in case Canva ever regenerates these <img> elements.
     [
-      { rotation: "-6.05501deg", src: "_assets/custom/couple-1.png" },
-      { rotation: "9.5948deg", src: "_assets/custom/couple-2.png" },
+      { rotation: "-6.05501deg", src: "_assets/custom/couple-1.webp" },
+      { rotation: "9.5948deg", src: "_assets/custom/couple-2.webp" },
     ].forEach(function (pair) {
       var wrapper = Array.from(document.querySelectorAll('div[style*="rotate(' + pair.rotation + ')"]')).find(function (d) {
         return d.querySelector("img");
