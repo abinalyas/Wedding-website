@@ -339,8 +339,8 @@
   var RINGS_ASPECT_FALLBACK = 600 / 240;
   // How much taller than the "and" artwork the rings may be. The names' text
   // boxes carry line-height padding well beyond the glyphs, so the visual gap
-  // is larger than the boxes suggest; 1.7 fills it without crowding either name.
-  var RINGS_SCALE_VS_AND = 1.7;
+  // is larger than the boxes suggest.
+  var RINGS_SCALE_VS_AND = 1.5;
 
   function ringsScroller() {
     // The page does not scroll the window — Canva scrolls a nested container.
@@ -447,11 +447,9 @@
       band.setAttribute("data-custom-clone", "rings-inline");
       // Absolutely positioned inside the section, exactly as Canva positions
       // its own blocks, so it sits in the lockup without disturbing the flow.
-      // No z-index here, deliberately. It would create a stacking context and
-      // isolate the video's multiply blend from the paper behind it, which
-      // puts the clip's white studio background back as a visible white box.
-      // position:absolute alone does not isolate it, and being appended last
-      // the band already paints above the section's own content.
+      // No z-index here, deliberately: it would create a stacking context and
+      // isolate the video's multiply blend, putting the clip's white studio
+      // background back as a visible white box.
       band.style.cssText =
         "position:absolute;display:flex;align-items:center;justify-content:center;" +
         "pointer-events:none;";
@@ -472,6 +470,15 @@
       // The "and" artwork stays in the DOM, just hidden — restoring it is one
       // line if the rings ever need to come out.
       parts.and.style.visibility = "hidden";
+      // Held by the section, with the section made its containing block. The
+      // two alternatives both failed: left in the scroll container's coordinate
+      // space the rings were invisible on phones, and hung off the "and"
+      // image's own parent they were clipped by its overflow and their multiply
+      // blend was isolated by its stacking context — the white studio
+      // background came back as a visible box.
+      if (getComputedStyle(parts.closing).position === "static") {
+        parts.closing.style.position = "relative";
+      }
       parts.closing.appendChild(band);
     }
     parts.and.style.visibility = "hidden";
@@ -490,22 +497,19 @@
     var maxW = Math.max(abinRect.width, meeraRect.width);
     if (w > maxW) { w = maxW; h = w / aspect; }
 
-    var midX = andRect.left + andRect.width / 2;
-    var midY = andRect.top + andRect.height / 2;
     video.style.width = w + "px";
     video.style.height = "auto";
-    // Offsets resolve against the band's actual containing block, which is not
-    // the section: Canva's <section> is position:static, so the nearest
-    // positioned ancestor turns out to be .ZRRuDw — the scroll container.
-    // Two consequences, both of which bit:
-    //   * measuring from the section put the rings above "Abin";
-    //   * an absolute child of a scroller is positioned in CONTENT space, so
-    //     the container's own scroll offset has to be added back, otherwise the
-    //     rings land a full page-scroll away from where they were measured.
-    var origin = band.offsetParent || parts.closing;
-    var oRect = origin.getBoundingClientRect();
-    band.style.left = Math.round(midX - oRect.left + (origin.scrollLeft || 0) - w / 2) + "px";
-    band.style.top = Math.round(midY - oRect.top + (origin.scrollTop || 0) - h / 2) + "px";
+    band.style.width = Math.round(w) + "px";
+    band.style.height = Math.round(h) + "px";
+
+    // Centred horizontally on the "and" artwork, and vertically on the midpoint
+    // between the two names — the artwork itself sits high in the gap, so
+    // matching it left the rings closer to "Abin" than to "Meera".
+    var midX = andRect.left + andRect.width / 2;
+    var midY = ((abinRect.top + abinRect.height / 2) +
+                (meeraRect.top + meeraRect.height / 2)) / 2;
+    band.style.left = Math.round(midX - closingRect.left - w / 2) + "px";
+    band.style.top = Math.round(midY - closingRect.top - h / 2) + "px";
     band.style.width = Math.round(w) + "px";
     band.style.height = Math.round(h) + "px";
 
@@ -528,11 +532,15 @@
 
     var scroller = ringsScroller();
     var queued = false;
+    var primed = false;
 
     function apply() {
       queued = false;
       var d = video.duration;
       if (!d || !isFinite(d)) return;
+      // Cheap and guarded: any scroll will prime the decoder if the load event
+      // did not manage it, which matters only on iOS but costs nothing else.
+      if (!primed) prime();
       var r = band.getBoundingClientRect();
       var vh = (scroller === window ? window.innerHeight : scroller.clientHeight)
         || window.innerHeight;
@@ -556,19 +564,29 @@
     if (video.readyState >= 1) apply();
     else video.addEventListener("loadedmetadata", apply, { once: true });
 
-    // iOS will not render a frame for a video that has never played, so a
-    // scrubbed-only clip stays blank there. The envelope's tap is a real user
-    // gesture, which is the one moment play() is allowed; playing and pausing
-    // immediately primes the decoder without anything being seen to play.
+    // iOS renders nothing at all for a video that has never played, so a
+    // scrubbed-only clip stays blank there however correctly it is positioned.
+    // Playing and pausing immediately primes the decoder without anything being
+    // seen to play.
+    //
+    // This used to wait for the envelope's "am:opened" tap. That was wrong: the
+    // band is only built once the closing section mounts, which is long after
+    // the envelope has gone, so the listener was attached to an event that had
+    // already fired and never ran. A muted video needs no gesture on iOS, so
+    // prime as soon as there is data — with the gesture listeners kept only as
+    // a fallback for anywhere that refuses.
     function prime() {
+      if (primed || !video) return;
+      primed = true;
       var pr = video.play();
       if (pr && pr.then) pr.then(function () { video.pause(); apply(); })
-                           .catch(function () {});
+                           .catch(function () { primed = false; });
       else { video.pause(); apply(); }
     }
-    window.addEventListener("am:opened", prime, { once: true });
-    document.addEventListener("touchend", prime, { once: true });
-    document.addEventListener("click", prime, { once: true });
+    if (video.readyState >= 2) prime();
+    else video.addEventListener("loadeddata", prime, { once: true });
+    document.addEventListener("touchend", prime);
+    document.addEventListener("click", prime);
   }
 
   function removeWishesSection() {
