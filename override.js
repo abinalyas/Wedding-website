@@ -497,45 +497,49 @@
     var maxW = Math.max(abinRect.width, meeraRect.width);
     if (w > maxW) { w = maxW; h = w / aspect; }
 
-    // Place once per layout, never during scrolling.
-    //
-    // The band lives inside the section and so travels with it for free; the
-    // names beside it are pure page scroll and move perfectly smoothly. Any
-    // rewriting of left/top while a guest is scrolling competes with that.
-    // Comparing rounded values was not enough: Canva re-renders sections as they
-    // virtualise in and out, which nudges the measured rects a pixel or two, and
-    // every nudge became a visible jump against otherwise smooth motion.
-    //
-    // The layout only genuinely changes when the breakpoint does, so key on the
-    // viewport width and on the "and" artwork's own height — Canva resizes that
-    // with its breakpoints — and skip everything otherwise.
-    var layoutKey = window.innerWidth + ":" + Math.round(andRect.height);
-    if (band.__layoutKey === layoutKey) {
-      ringsScrub(band, video);
-      // This tick only runs when nothing is scrolling, which makes it the right
-      // moment to re-take the scrub's measurements — the page's height keeps
-      // changing as the patches above settle.
-      if (band.__scrubMeasure) band.__scrubMeasure();
-      return;
-    }
-    band.__layoutKey = layoutKey;
-    band.__scrubGeom = null;
-
-    video.style.width = w + "px";
-    video.style.height = "auto";
-    band.style.width = Math.round(w) + "px";
-    band.style.height = Math.round(h) + "px";
-
     // Centred horizontally on the "and" artwork, and vertically on the midpoint
     // between the two names — the artwork itself sits high in the gap, so
     // matching it left the rings closer to "Abin" than to "Meera".
     var midX = andRect.left + andRect.width / 2;
     var midY = ((abinRect.top + abinRect.height / 2) +
                 (meeraRect.top + meeraRect.height / 2)) / 2;
-    band.style.left = Math.round(midX - closingRect.left - w / 2) + "px";
-    band.style.top = Math.round(midY - closingRect.top - h / 2) + "px";
+    var left = Math.round(midX - closingRect.left - w / 2);
+    var top = Math.round(midY - closingRect.top - h / 2);
+    var wR = Math.round(w), hR = Math.round(h);
+
+    // Re-measured every tick, and written only when it actually changed.
+    //
+    // This deliberately does NOT cache the placement against a layout key. It
+    // did briefly, keyed on the viewport width and the "and" artwork's height,
+    // and that was wrong: neither of those changes as the NAMES settle. On a
+    // phone the closing section mounts while the guest is already scrolling, so
+    // the first measurement is taken mid-render — and caching pinned the rings
+    // wherever that early reading put them, which on mobile was down over
+    // "Meera" instead of between the two names, permanently.
+    //
+    // Re-measuring is what lets it converge as fonts load and Canva re-renders.
+    // The jitter that the cache was meant to stop is handled properly now: this
+    // whole pass is held back until scrolling stops, so a correction can never
+    // land mid-scroll and compete with the names' motion.
+    if (band.__left !== left || band.__top !== top ||
+        band.__w !== wR || band.__h !== hR) {
+      video.style.width = w + "px";
+      video.style.height = "auto";
+      band.style.width = wR + "px";
+      band.style.height = hR + "px";
+      band.style.left = left + "px";
+      band.style.top = top + "px";
+      band.__left = left;
+      band.__top = top;
+      band.__w = wR;
+      band.__h = hR;
+      band.__scrubGeom = null;   // the band moved, so the scrub must re-measure
+    }
 
     ringsScrub(band, video);
+    // Nothing is scrolling on this tick, which makes it the right moment to
+    // re-take the scrub's measurements — the page's height keeps changing as
+    // the patches above settle.
     if (band.__scrubMeasure) band.__scrubMeasure();
   }
 
