@@ -497,10 +497,15 @@
     var maxW = Math.max(abinRect.width, meeraRect.width);
     if (w > maxW) { w = maxW; h = w / aspect; }
 
-    video.style.width = w + "px";
-    video.style.height = "auto";
-    band.style.width = Math.round(w) + "px";
-    band.style.height = Math.round(h) + "px";
+    var wR = Math.round(w), hR = Math.round(h);
+    if (band.__w !== wR || band.__h !== hR) {
+      video.style.width = w + "px";
+      video.style.height = "auto";
+      band.style.width = wR + "px";
+      band.style.height = hR + "px";
+      band.__w = wR;
+      band.__h = hR;
+    }
 
     // Centred horizontally on the "and" artwork, and vertically on the midpoint
     // between the two names — the artwork itself sits high in the gap, so
@@ -508,8 +513,20 @@
     var midX = andRect.left + andRect.width / 2;
     var midY = ((abinRect.top + abinRect.height / 2) +
                 (meeraRect.top + meeraRect.height / 2)) / 2;
-    band.style.left = Math.round(midX - closingRect.left - w / 2) + "px";
-    band.style.top = Math.round(midY - closingRect.top - h / 2) + "px";
+    var left = Math.round(midX - closingRect.left - w / 2);
+    var top = Math.round(midY - closingRect.top - h / 2);
+
+    // Only write when something actually moved. These offsets are relative to
+    // the section so they are scroll-invariant in principle, but the rects are
+    // sampled mid-scroll and drift a pixel or two between ticks; rewriting them
+    // every 300ms turned that drift into a visible stutter as the rings
+    // travelled up the screen.
+    if (band.__left !== left || band.__top !== top) {
+      band.style.left = left + "px";
+      band.style.top = top + "px";
+      band.__left = left;
+      band.__top = top;
+    }
     band.style.width = Math.round(w) + "px";
     band.style.height = Math.round(h) + "px";
 
@@ -542,11 +559,22 @@
       // did not manage it, which matters only on iOS but costs nothing else.
       if (!primed) prime();
       var r = band.getBoundingClientRect();
-      var vh = (scroller === window ? window.innerHeight : scroller.clientHeight)
-        || window.innerHeight;
-      // 0 as the rings enter from the bottom, 1 once they reach centre screen.
-      var travel = vh / 2 + r.height / 2;
-      var p = travel > 0 ? (vh - r.top) / travel : 0;
+      var win = scroller === window;
+      var vh = (win ? window.innerHeight : scroller.clientHeight) || window.innerHeight;
+      var scrollTop = win ? window.pageYOffset : scroller.scrollTop;
+      var maxScroll = win
+        ? (document.documentElement.scrollHeight - vh)
+        : (scroller.scrollHeight - scroller.clientHeight);
+      var top0 = scrollTop + r.top - (win ? 0 : scroller.getBoundingClientRect().top);
+
+      // Run from the rings entering the screen to whichever comes FIRST: them
+      // reaching centre screen, or the page running out of scroll. On a phone
+      // the closing section is short and last, so there is not enough scroll
+      // left to bring the lockup to the middle — mapping only to centre left
+      // the rings almost, but never quite, joined at the bottom of the page.
+      var start = top0 - vh;
+      var end = Math.min(top0 - (vh / 2 - r.height / 2), maxScroll);
+      var p = (end - start) > 8 ? (scrollTop - start) / (end - start) : 1;
       p = Math.max(0, Math.min(1, p));
       var t = p * d;
       if (Math.abs(t - video.currentTime) > d / 121) {
