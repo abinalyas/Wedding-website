@@ -47,11 +47,12 @@
 /* Safety net for the WebP photographs.
 
    The six custom photographs ship as WebP because they are photographs and PNG
-   was costing 4.6MB where WebP costs 0.6MB — the single biggest reason the page
-   was slow to show its images on a phone. The original PNGs are still in the
-   repo, so if a WebP ever fails to load — an old browser, a bad transfer, some
-   behaviour of Canva's runtime not anticipated here — fall straight back to the
-   PNG rather than leaving a hole where a photo should be.
+   was the wrong container for them: 4.61MB as PNG against 0.59MB as WebP, which
+   was the largest single reason the page was slow to show its images on a phone.
+   The original PNGs are still in the repo, so if a WebP ever fails to load — an
+   old browser, a bad transfer, some behaviour of Canva's runtime not anticipated
+   here — fall straight back to the PNG rather than leaving a hole where a photo
+   should be.
 
    Capture phase, because "error" from an <img> does not bubble. */
 (function () {
@@ -339,73 +340,70 @@
 
   // The rings clip is a 3D render on a plain white studio background. Dropping
   // that white with mix-blend-mode:multiply is what makes it read as part of
-  // the paper rather than a video pasted onto it: white multiplied against any
+  // the invite rather than a video pasted onto it: white multiplied against any
   // backdrop leaves the backdrop untouched, so the studio background disappears
-  // while the gold rings stay gold. This only works while nothing between the
-  // video and that backdrop creates its own stacking context, so the clip must
-  // NOT sit inside a positioned / z-indexed / opacity'd wrapper.
+  // into whatever is behind it while the gold rings stay gold. This only works
+  // while nothing between the video and that backdrop creates its own stacking
+  // context, so the clip must NOT sit inside a positioned / z-indexed /
+  // opacity'd wrapper.
   //
-  // It replaces the calligraphic "and" in the CLOSING lockup, so the sign-off
-  // reads Abin — rings — Meera and the rings do the joining literally. Only the
-  // closing one: the hero uses the same "and" artwork and keeps it.
+  // It sits in a band of its own between the reception and details sections —
+  // below the reception's "Open map" button, above the couple photos.
   //
-  // It previously sat in a band of its own after the last section. That was
-  // reachable only by scrolling to the very end, which most guests never do,
-  // and it needed half a screen of empty runway to scrub over.
-  //
-  // The clip is cropped to the rings (2.5:1) so it drops into the gap between
-  // the two names — 242px of clear space at desktop — without moving either of
-  // them. Cropping also removed the generator's watermark, which sat below the
-  // rings and is simply outside the new frame.
-  var RINGS_SRC = "rings-inline.mp4";
-  var RINGS_ASPECT_FALLBACK = 600 / 240;
-  // How much taller than the "and" artwork the rings may be. The names' text
-  // boxes carry line-height padding well beyond the glyphs, so the visual gap
-  // is larger than the boxes suggest.
-  var RINGS_SCALE_VS_AND = 1.5;
+  // An earlier version overlaid it inside a section instead, using a negative
+  // margin so it took no layout height, which avoided the band's background
+  // having to match anything. That worked on desktop and failed completely on
+  // phones: Canva's sections are far shorter relative to their width there (the
+  // ceremony section is 681px tall at 375px wide, against 2298px at desktop),
+  // so the free space inside them collapses to about 38px and there is simply
+  // nowhere to overlay. Worse, the old code bailed out when the space was too
+  // small WITHOUT having styled the video, leaving it at its intrinsic 1088px
+  // on a 375px screen. Hence a real band, and a background sampled to match.
+  var RINGS_SRC = "rings-scroll.mp4";
+  var RINGS_WIDTH_FRACTION = 0.46;  // clip width, as a share of the band's width
+  var RINGS_BAND_PADDING = 0.16;    // vertical breathing room, as a share of clip height
+  var RINGS_FALLBACK_BG = "#efece6";
+  // How much of a screen the rings get to play over. A full screen read as
+  // dead space and risked guests stopping before they reached the bottom, so
+  // the band is a little over half a screen: the rings come into view sooner,
+  // the closing section stays visible above them, and the scrub still has
+  // enough travel not to snap.
+  var RINGS_RUNWAY = 0.55;
 
   function ringsScroller() {
     // The page does not scroll the window — Canva scrolls a nested container.
     return document.querySelector(".ZRRuDw") || window;
   }
 
-  function ringsClosingParts() {
-    // The closing section is the last one, and carries the same Abin / "and" /
-    // Meera lockup as the hero. Everything is found by text and geometry, never
-    // by class name, since Canva regenerates those on every render.
-    var sections = Array.from(document.querySelectorAll("section"));
-    if (!sections.length) return null;
-    var closing = sections[sections.length - 1];
-    if (closing.textContent.indexOf("With Love") === -1) return null;
-
-    var names = Array.from(closing.querySelectorAll("p,span,div")).filter(function (e) {
-      return e.children.length === 0 && /^(abin|meera)$/i.test(e.textContent.trim());
-    });
-    if (names.length < 2) return null;
-
-    var abin = null, meera = null;
-    names.forEach(function (e) {
-      if (/abin/i.test(e.textContent)) abin = e; else meera = e;
-    });
-    if (!abin || !meera) return null;
-
-    var ar = abin.getBoundingClientRect(), mr = meera.getBoundingClientRect();
-    if (!(ar.height > 10) || !(mr.height > 10)) return null;
-    // The "and" is the wide, short image whose centre falls between the two
-    // names. Testing that it sits strictly BETWEEN their boxes looks tighter
-    // but fails: Canva's text boxes carry line-height padding far past the
-    // glyphs, so the artwork overlaps them and the check silently found
-    // nothing. Centres are stable.
-    var aMid = ar.top + ar.height / 2, mMid = mr.top + mr.height / 2;
-    var lo = Math.min(aMid, mMid), hi = Math.max(aMid, mMid);
-    var and = Array.from(closing.querySelectorAll("img")).find(function (im) {
+  function ringsSectionTexture(section) {
+    // Every Canva section paints its own full-bleed copy of the paper texture.
+    // Finding it lets the band be given the same paper rather than a guess.
+    var sr = section.getBoundingClientRect();
+    if (!(sr.width > 0)) return null;
+    return Array.from(section.querySelectorAll("img")).find(function (im) {
       var r = im.getBoundingClientRect();
-      if (!(r.width > r.height * 3)) return false;
-      var mid = r.top + r.height / 2;
-      return mid > lo && mid < hi;
-    });
-    if (!and) return null;
-    return { closing: closing, abin: abin, meera: meera, and: and };
+      return r.width >= sr.width * 0.9 && r.height >= sr.height * 0.5;
+    }) || null;
+  }
+
+  function ringsSampleColour(img) {
+    // Read the texture's average colour straight out of the image, so the band
+    // matches the sections exactly instead of relying on a hardcoded cream that
+    // drifts as soon as anything about the artwork changes. Same-origin, so the
+    // canvas is not tainted.
+    try {
+      if (!img.complete || !img.naturalWidth) return null;
+      var c = document.createElement("canvas");
+      c.width = 8; c.height = 8;
+      var ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, 8, 8);
+      var d = ctx.getImageData(0, 0, 8, 8).data;
+      var r = 0, g = 0, b = 0, n = 0;
+      for (var i = 0; i < d.length; i += 4) { r += d[i]; g += d[i+1]; b += d[i+2]; n++; }
+      return "rgb(" + Math.round(r/n) + "," + Math.round(g/n) + "," + Math.round(b/n) + ")";
+    } catch (e) {
+      return null;
+    }
   }
 
   // Canva leaves a long empty run between the reception's "Open map" button and
@@ -453,269 +451,163 @@
   }
 
   function addRingsAnimation() {
-    var parts = ringsClosingParts();
-    if (!parts) return; // Canva has not rendered the closing section yet.
+    // The band closes the invitation: it is the last thing on the page, so the
+    // rings come together exactly as a guest reaches the bottom. Sitting it
+    // mid-page meant the animation finished as the band left the top of the
+    // screen, which is well before anyone had finished reading.
+    var sections = Array.from(document.querySelectorAll("section"));
+    if (!sections.length) return; // Canva has not rendered yet.
+    var host = sections[sections.length - 1];
 
-    var andRect = parts.and.getBoundingClientRect();
-    var closingRect = parts.closing.getBoundingClientRect();
-    var abinRect = parts.abin.getBoundingClientRect();
-    var meeraRect = parts.meera.getBoundingClientRect();
-
-    var band = parts.closing.querySelector('[data-custom-clone="rings-inline"]');
+    var band = document.querySelector('[data-custom-clone="rings-band"]');
     var video = band ? band.querySelector("video") : null;
 
     if (!band || !band.isConnected) {
       band = document.createElement("div");
-      band.setAttribute("data-custom-clone", "rings-inline");
-      // Absolutely positioned inside the section, exactly as Canva positions
-      // its own blocks, so it sits in the lockup without disturbing the flow.
-      // No z-index here, deliberately: it would create a stacking context and
-      // isolate the video's multiply blend, putting the clip's white studio
-      // background back as a visible white box.
+      band.setAttribute("data-custom-clone", "rings-band");
       band.style.cssText =
-        "position:absolute;display:flex;align-items:center;justify-content:center;" +
-        "pointer-events:none;";
+        "width:100%;display:flex;align-items:center;justify-content:center;" +
+        "overflow:hidden;background:" + RINGS_FALLBACK_BG + ";";
 
       video = document.createElement("video");
       video.src = RINGS_SRC;
       video.muted = true;
-      video.loop = false;        // position on screen drives it, not playback
+      video.loop = false;          // driven by scroll position, not by playback
       video.autoplay = false;
       video.preload = "auto";
-      video.playsInline = true;  // iOS: never go fullscreen
+      video.playsInline = true;    // iOS: never go fullscreen
       video.setAttribute("playsinline", "");
       video.setAttribute("muted", "");
       video.setAttribute("aria-hidden", "true");
-      video.style.cssText = "display:block;mix-blend-mode:multiply;pointer-events:none;";
 
       band.appendChild(video);
-      // The "and" artwork stays in the DOM, just hidden — restoring it is one
-      // line if the rings ever need to come out.
-      parts.and.style.visibility = "hidden";
-      // Held by the section, with the section made its containing block. The
-      // two alternatives both failed: left in the scroll container's coordinate
-      // space the rings were invisible on phones, and hung off the "and"
-      // image's own parent they were clipped by its overflow and their multiply
-      // blend was isolated by its stacking context — the white studio
-      // background came back as a visible box.
-      if (getComputedStyle(parts.closing).position === "static") {
-        parts.closing.style.position = "relative";
-      }
-      parts.closing.appendChild(band);
+      host.parentNode.insertBefore(band, host.nextSibling);
     }
-    parts.and.style.visibility = "hidden";
 
-    // Sized from the "and" artwork it replaces rather than from a computed gap:
-    // the "and" is 5:1 and the rings 2.5:1, so matching its box exactly would
-    // leave them tiny, but it is a reliable anchor where the gap is not.
-    if (!(andRect.height > 10) || !(closingRect.width > 60)) return;
+    var bandWidth = band.getBoundingClientRect().width;
+    if (!(bandWidth > 80)) return; // not laid out yet
 
+    // Size from the band's WIDTH, which tracks the viewport predictably, rather
+    // than from a share of a section's height — that is what broke on phones.
     var aspect = (video.videoWidth && video.videoHeight)
       ? video.videoWidth / video.videoHeight
-      : RINGS_ASPECT_FALLBACK;
-    var h = andRect.height * RINGS_SCALE_VS_AND;
-    var w = h * aspect;
-    // Never wider than the longer name, so the lockup stays a column.
-    var maxW = Math.max(abinRect.width, meeraRect.width);
-    if (w > maxW) { w = maxW; h = w / aspect; }
+      : 560 / 374;
+    var clipWidth = bandWidth * RINGS_WIDTH_FRACTION;
+    var clipHeight = clipWidth / aspect;
 
-    // Centred horizontally on the "and" artwork, and vertically on the midpoint
-    // between the two names — the artwork itself sits high in the gap, so
-    // matching it left the rings closer to "Abin" than to "Meera".
-    var midX = andRect.left + andRect.width / 2;
-    var midY = ((abinRect.top + abinRect.height / 2) +
-                (meeraRect.top + meeraRect.height / 2)) / 2;
-    var left = Math.round(midX - closingRect.left - w / 2);
-    var top = Math.round(midY - closingRect.top - h / 2);
-    var wR = Math.round(w), hR = Math.round(h);
+    video.style.cssText =
+      "width:" + clipWidth + "px;height:auto;display:block;" +
+      "mix-blend-mode:multiply;pointer-events:none;";
 
-    // Re-measured every tick, and written only when it actually changed.
-    //
-    // This deliberately does NOT cache the placement against a layout key. It
-    // did briefly, keyed on the viewport width and the "and" artwork's height,
-    // and that was wrong: neither of those changes as the NAMES settle. On a
-    // phone the closing section mounts while the guest is already scrolling, so
-    // the first measurement is taken mid-render — and caching pinned the rings
-    // wherever that early reading put them, which on mobile was down over
-    // "Meera" instead of between the two names, permanently.
-    //
-    // Re-measuring is what lets it converge as fonts load and Canva re-renders.
-    // The jitter that the cache was meant to stop is handled properly now: this
-    // whole pass is held back until scrolling stops, so a correction can never
-    // land mid-scroll and compete with the names' motion.
-    if (band.__left !== left || band.__top !== top ||
-        band.__w !== wR || band.__h !== hR) {
-      video.style.width = w + "px";
-      video.style.height = "auto";
-      band.style.width = wR + "px";
-      band.style.height = hR + "px";
-      band.style.left = left + "px";
-      band.style.top = top + "px";
-      band.__left = left;
-      band.__top = top;
-      band.__w = wR;
-      band.__h = hR;
-      band.__scrubGeom = null;   // the band moved, so the scrub must re-measure
+    // The band is the scrub's runway. As the last element on the page nothing
+    // can be scrolled past it, so its height IS the travel the five seconds
+    // play over — a band only as tall as the clip would compress them into
+    // 150px and snap.
+    var sc = ringsScroller();
+    var viewportH = (sc === window ? window.innerHeight : sc.clientHeight)
+      || window.innerHeight;
+    band.style.height = Math.round(viewportH * RINGS_RUNWAY) + "px";
+
+    // Match the band to the paper it sits between. Sampled once and remembered,
+    // since it cannot change without the artwork changing.
+    if (!band.__bgSet) {
+      var tex = ringsSectionTexture(host);
+      if (tex) {
+        var colour = ringsSampleColour(tex);
+        if (colour) {
+          band.style.backgroundColor = colour;
+          // The same texture at the same rendered scale, so the band carries the
+          // paper's grain and not just its colour.
+          var tr = tex.getBoundingClientRect();
+          band.style.backgroundImage = "url('" + tex.getAttribute("src") + "')";
+          band.style.backgroundSize = Math.round(tr.width) + "px " + Math.round(tr.height) + "px";
+          band.style.backgroundPosition = "center center";
+          band.style.backgroundRepeat = "no-repeat";
+          band.__bgSet = true;
+        }
+      }
     }
 
     ringsScrub(band, video);
-    // Nothing is scrolling on this tick, which makes it the right moment to
-    // re-take the scrub's measurements — the page's height keeps changing as
-    // the patches above settle.
-    if (band.__scrubMeasure) band.__scrubMeasure();
   }
 
   function ringsScrub(band, video) {
-    // Scrolling down runs the rings together, scrolling back up separates them.
-    // The clip is encoded with every frame a keyframe so seeking lands anywhere
-    // cheaply — a normal encode has about six and would snap between them.
-    //
-    // It completes as the lockup arrives at the middle of the screen, NOT at the
-    // very bottom of the page. Finishing at the bottom made sense when the clip
-    // was a standalone finale, but as part of a sign-off the rings need to be
-    // resolved while the guest is actually reading it — otherwise Abin and Meera
-    // are joined by two rings frozen mid-tumble. It also means no runway of
-    // empty space is needed after the section any more.
+    // Scrub the clip from the band's travel through the viewport: scrolling down
+    // runs the rings forward, scrolling up runs them backward. The clip is
+    // encoded with every frame a keyframe so seeking lands anywhere cheaply — a
+    // normal encode has about six keyframes and would snap between them.
     if (band.__scrubBound) return;
     band.__scrubBound = true;
 
     var scroller = ringsScroller();
     var queued = false;
-    var primed = false;
 
     function apply() {
       queued = false;
       var d = video.duration;
       if (!d || !isFinite(d)) return;
-      // Cheap and guarded: any scroll will prime the decoder if the load event
-      // did not manage it, which matters only on iOS but costs nothing else.
-      if (!primed) prime();
+      // Run from the moment the band first appears to the moment the page can
+      // scroll no further, so the rings meet exactly as a guest reaches the
+      // bottom. The old mapping finished when the band cleared the TOP of the
+      // screen — as the last element it never does, so the rings would have
+      // stopped part-joined; mid-page it meant they joined far too early.
+      var p;
       var win = scroller === window;
+      var vh = win ? window.innerHeight : scroller.clientHeight;
+      var maxScroll = win
+        ? (document.documentElement.scrollHeight - vh)
+        : (scroller.scrollHeight - scroller.clientHeight);
       var scrollTop = win ? window.pageYOffset : scroller.scrollTop;
-
-      // Read nothing but scrollTop while scrolling. Where the band sits in the
-      // page, how tall it is and how far the page scrolls are all fixed until
-      // the layout changes, so they are measured on the idle tick instead
-      // (see measure() below). Calling getBoundingClientRect here forced a
-      // layout on every scroll frame, on the same main thread that has to
-      // repaint the blended video — so the measuring was itself part of what
-      // made the rings stutter.
-      var m = band.__scrubGeom;
-      if (!m) {
-        measure();
-        m = band.__scrubGeom;
-        if (!m) return;
-      }
-
-      // Run from the rings entering the screen to whichever comes FIRST: them
-      // reaching centre screen, or the page running out of scroll. On a phone
-      // the closing section is short and last, so there is not enough scroll
-      // left to bring the lockup to the middle — mapping only to centre left
-      // the rings almost, but never quite, joined at the bottom of the page.
-      var start = m.top0 - m.vh;
-      var end = Math.min(m.top0 - (m.vh / 2 - m.height / 2), m.maxScroll);
-      var p = (end - start) > 8 ? (scrollTop - start) / (end - start) : 1;
-      p = Math.max(0, Math.min(1, p));
-      seekTo(p * d);
-    }
-
-    // Only ever one seek in flight: issue one, keep only the most recent target
-    // while it runs, and go to that target the moment it completes.
-    //
-    // Assigning currentTime again while a seek is still running does not queue,
-    // it abandons the one in flight and starts over, so the old code could keep
-    // restarting the decoder without it ever landing. Measured on desktop a seek
-    // completes in about 1.7ms and this changes nothing there — it is insurance
-    // for slower hardware, where the seek can outlast the frame that asked for
-    // it. Note this is NOT what was making the rings judder; that was measured
-    // and ruled out.
-    var seeking = false;
-    var wanted = null;
-
-    function seekTo(t) {
-      if (seeking) {
-        wanted = t;
-        return;
-      }
-      var d = video.duration;
-      if (Math.abs(t - video.currentTime) <= d / 240) return; // already there
-      seeking = true;
-      try {
-        video.currentTime = t;
-      } catch (e) {
-        seeking = false;
-      }
-    }
-
-    function seekDone() {
-      seeking = false;
-      if (wanted === null) return;
-      var t = wanted;
-      wanted = null;
-      seekTo(t);
-    }
-    video.addEventListener("seeked", seekDone);
-    // A seek that fails leaves no "seeked" event behind, which would wedge the
-    // scrub permanently; these release it.
-    video.addEventListener("error", seekDone);
-    video.addEventListener("stalled", seekDone);
-    // Everything the scrub needs that is not scrollTop. Re-taken on the idle
-    // tick, so it stays correct as Canva re-renders and as the patches above
-    // change the page's height — but never during a scroll.
-    function measure() {
-      var win = scroller === window;
       var r = band.getBoundingClientRect();
-      if (!(r.height > 0)) return;
-      var vh = (win ? window.innerHeight : scroller.clientHeight) || window.innerHeight;
-      var scrollTop = win ? window.pageYOffset : scroller.scrollTop;
-      band.__scrubGeom = {
-        top0: scrollTop + r.top - (win ? 0 : scroller.getBoundingClientRect().top),
-        height: r.height,
-        vh: vh,
-        maxScroll: win
-          ? (document.documentElement.scrollHeight - vh)
-          : (scroller.scrollHeight - scroller.clientHeight)
-      };
+      var bandTop = scrollTop + r.top - (win ? 0 : scroller.getBoundingClientRect().top);
+      var start = bandTop - vh;   // band's top edge just entering from below
+      if (maxScroll - start > 40) {
+        p = (scrollTop - start) / (maxScroll - start);
+      } else {
+        // Degenerate (band not last, or page too short to scroll) — fall back
+        // to its travel across the viewport.
+        p = (vh - r.top) / (vh + r.height);
+      }
+      p = Math.max(0, Math.min(1, p));
+      var t = p * d;
+      // Seeking costs more than it is worth for sub-frame moves.
+      if (Math.abs(t - video.currentTime) > d / 121) {
+        try { video.currentTime = t; } catch (e) {}
+      }
     }
-    band.__scrubMeasure = measure;
-
     function onScroll() {
       if (queued) return;
       queued = true;
-      window.requestAnimationFrame(apply);
+      // rAF coalesces the burst of scroll events into one seek per frame, but
+      // it does not run at all in some contexts (throttled or non-compositing
+      // pages), which would leave the clip frozen. The timer is a floor.
+      var raf = window.requestAnimationFrame(run);
+      var timer = window.setTimeout(run, 120);
+      function run() {
+        window.cancelAnimationFrame(raf);
+        window.clearTimeout(timer);
+        apply();
+      }
     }
 
     scroller.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", function () {
-      band.__scrubGeom = null;
-      onScroll();
-    }, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
     if (video.readyState >= 1) apply();
     else video.addEventListener("loadedmetadata", apply, { once: true });
 
-    // iOS renders nothing at all for a video that has never played, so a
-    // scrubbed-only clip stays blank there however correctly it is positioned.
-    // Playing and pausing immediately primes the decoder without anything being
-    // seen to play.
-    //
-    // This used to wait for the envelope's "am:opened" tap. That was wrong: the
-    // band is only built once the closing section mounts, which is long after
-    // the envelope has gone, so the listener was attached to an event that had
-    // already fired and never ran. A muted video needs no gesture on iOS, so
-    // prime as soon as there is data — with the gesture listeners kept only as
-    // a fallback for anywhere that refuses.
+    // iOS will not render a frame for a video that has never played, so a
+    // scrubbed-only clip stays blank there. The envelope's tap is a real user
+    // gesture, which is the one moment play() is allowed; playing and pausing
+    // immediately primes the decoder without anything being seen to play.
     function prime() {
-      if (primed || !video) return;
-      primed = true;
       var pr = video.play();
       if (pr && pr.then) pr.then(function () { video.pause(); apply(); })
-                           .catch(function () { primed = false; });
+                           .catch(function () {});
       else { video.pause(); apply(); }
     }
-    if (video.readyState >= 2) prime();
-    else video.addEventListener("loadeddata", prime, { once: true });
-    document.addEventListener("touchend", prime);
-    document.addEventListener("click", prime);
+    window.addEventListener("am:opened", prime, { once: true });
+    document.addEventListener("touchend", prime, { once: true });
+    document.addEventListener("click", prime, { once: true });
   }
 
   function removeWishesSection() {
@@ -834,63 +726,9 @@
     addRingsAnimation();
   }
 
-  // Never run any of this while a scroll is in flight.
-  //
-  // runPatches() walks the whole document for text and then reads layout dozens
-  // of times. Canva's own text scrolls on the compositor and never notices that.
-  // Anything that has to be painted on the main thread every frame does, and on
-  // Safari the blended rings video is exactly that.
-  //
-  // Measured on desktop this costs nothing — frame pacing is a flat 60fps with
-  // the timer running — so it is not proven to be what made the rings judder on
-  // a phone. But it is real main-thread work landing on a fixed cadence during
-  // scrolling, for no benefit: the patches are idempotent and exist to catch
-  // Canva re-rendering, which does not happen mid-scroll. So they are held back
-  // until scrolling settles.
-  var scrolling = false;
-  var scrollIdle = 0;
-  var missed = false;
-
-  function onUserScroll() {
-    scrolling = true;
-    clearTimeout(scrollIdle);
-    scrollIdle = setTimeout(function () {
-      scrolling = false;
-      if (missed) {
-        missed = false;
-        runPatches();
-      }
-    }, 180);
-  }
-
-  function patchesWhenIdle() {
-    if (scrolling) {
-      missed = true;
-      return;
-    }
-    runPatches();
-  }
-
-  // Capture, because scroll does not bubble and the page scrolls in a nested
-  // container that does not exist yet when this runs.
-  document.addEventListener("scroll", onUserScroll, true);
-  window.addEventListener("wheel", onUserScroll, { passive: true });
-  window.addEventListener("touchmove", onUserScroll, { passive: true });
-
-  setInterval(patchesWhenIdle, 300);
+  setInterval(runPatches, 300);
   if (window.MutationObserver) {
-    // Coalesced to one run per frame. It used to call runPatches synchronously
-    // for every mutation batch — while runPatches itself mutates the DOM, so it
-    // was re-entering itself and could fire far more often than the timer.
-    var moQueued = false;
-    new MutationObserver(function () {
-      if (moQueued) return;
-      moQueued = true;
-      requestAnimationFrame(function () {
-        moQueued = false;
-        patchesWhenIdle();
-      });
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver(runPatches).observe(document.documentElement, { childList: true, subtree: true });
   }
   document.addEventListener("DOMContentLoaded", runPatches);
   window.addEventListener("load", runPatches);
