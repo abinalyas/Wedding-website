@@ -370,6 +370,26 @@
   // enough travel not to snap.
   var RINGS_RUNWAY = 0.55;
 
+  // Phones get their own treatment. The runway is the band's height, and with
+  // the clip centred in it half of that height lands as blank paper between
+  // "Meera" and the rings — 215px on a 375x812 phone, which reads as the page
+  // having ended. Three things change here, none of which cost much travel:
+  //
+  //   - a slightly shorter band,
+  //   - the clip sitting high in it rather than centred, so the runway is blank
+  //     space BELOW the rings, at the very end of the page, where it is just
+  //     the bottom margin instead of a gap in the middle of the sign-off,
+  //   - the scrub finishing a little before the true bottom, so a guest who
+  //     stops a thumb's width short still sees the rings meet.
+  var RINGS_PHONE_MAX_W = 820;
+  var RINGS_RUNWAY_PHONE = 0.32;
+  var RINGS_CLIP_BIAS_PHONE = 0.20;  // share of the band's spare height above the clip
+  var RINGS_FINISH_EARLY_PHONE = 0.10;  // of a screen, before the page truly ends
+
+  function ringsIsPhone() {
+    return window.innerWidth <= RINGS_PHONE_MAX_W;
+  }
+
   function ringsScroller() {
     // The page does not scroll the window — Canva scrolls a nested container.
     return document.querySelector(".ZRRuDw") || window;
@@ -465,8 +485,10 @@
     if (!band || !band.isConnected) {
       band = document.createElement("div");
       band.setAttribute("data-custom-clone", "rings-band");
+      // flex-start rather than centre: where the clip sits inside the band is
+      // set below, since on a phone it is deliberately not centred.
       band.style.cssText =
-        "width:100%;display:flex;align-items:center;justify-content:center;" +
+        "width:100%;display:flex;align-items:flex-start;justify-content:center;" +
         "overflow:hidden;background:" + RINGS_FALLBACK_BG + ";";
 
       video = document.createElement("video");
@@ -506,7 +528,27 @@
     var sc = ringsScroller();
     var viewportH = (sc === window ? window.innerHeight : sc.clientHeight)
       || window.innerHeight;
-    band.style.height = Math.round(viewportH * RINGS_RUNWAY) + "px";
+    var phone = ringsIsPhone();
+    var bandH = Math.round(viewportH * (phone ? RINGS_RUNWAY_PHONE : RINGS_RUNWAY));
+    band.style.height = bandH + "px";
+
+    // Where the clip sits in that height. On a phone, high up, so the spare
+    // height falls below the rings rather than between them and "Meera".
+    //
+    // On a desktop, left exactly as it was: centred. Not merely for consistency
+    // — at 1350px the clip works out taller than the band (415px against 350px)
+    // and is cropped by the band's overflow, so centring is what keeps that crop
+    // even top and bottom. Aligning to the top there would quietly take the
+    // whole crop out of the bottom of the rings.
+    if (phone) {
+      var spare = Math.max(0, bandH - clipHeight);
+      band.style.alignItems = "flex-start";
+      band.style.paddingTop = Math.round(spare * RINGS_CLIP_BIAS_PHONE) + "px";
+      band.style.boxSizing = "border-box";
+    } else {
+      band.style.alignItems = "center";
+      band.style.paddingTop = "0px";
+    }
 
     // Match the band to the paper it sits between. Sampled once and remembered,
     // since it cannot change without the artwork changing.
@@ -561,8 +603,13 @@
       var r = band.getBoundingClientRect();
       var bandTop = scrollTop + r.top - (win ? 0 : scroller.getBoundingClientRect().top);
       var start = bandTop - vh;   // band's top edge just entering from below
-      if (maxScroll - start > 40) {
-        p = (scrollTop - start) / (maxScroll - start);
+      // On a phone, finish a little before the page truly ends. Landing the
+      // join on the very last pixel means a guest who stops a thumb's width
+      // short never sees the rings meet at all, which is the whole point of
+      // them.
+      var end = maxScroll - (ringsIsPhone() ? vh * RINGS_FINISH_EARLY_PHONE : 0);
+      if (end - start > 40) {
+        p = (scrollTop - start) / (end - start);
       } else {
         // Degenerate (band not last, or page too short to scroll) — fall back
         // to its travel across the viewport.
