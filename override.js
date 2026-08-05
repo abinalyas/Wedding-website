@@ -235,7 +235,7 @@
     var venueWrapper = positionedWrapper(textEls("Venue")[0]);
     var timeWrapper = positionedWrapper(textEls("6:30 PM")[0]);
     var headingWrapper = positionedWrapper(textEls("Reception")[0]);
-    var ceremonyTimeWrapper = positionedWrapper(textEls("3:00 PM")[0]);
+    var ceremonyTimeWrapper = positionedWrapper(textEls("2:00 PM")[0]);
     var mapTextWrapper = positionedWrapper(textEls("Open map")[0]);
     // The visible pill/button look ("Open map" text + rounded, bordered
     // background) is two sibling elements — an SVG shape plus the text —

@@ -1,8 +1,8 @@
 /* Local self-contained wedding countdown → replaces the external Invitarium
    timer iframe (token 6e950298a33c648472) so it targets Abin & Meera's date. */
 (function () {
-  // Target: 26 Aug 2026, 3:00 PM (ceremony). Month is 0-indexed → 7 = August.
-  var TARGET = new Date(2026, 7, 26, 15, 0, 0).getTime();
+  // Target: 26 Aug 2026, 2:00 PM (ceremony). Month is 0-indexed → 7 = August.
+  var TARGET = new Date(2026, 7, 26, 14, 0, 0).getTime();
   var pad = function (n) { return String(n).padStart(2, "0"); };
 
   function build(box) {
