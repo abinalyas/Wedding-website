@@ -44,15 +44,18 @@
   }, true);
 })();
 
-/* Safety net for the WebP photographs.
+/* Safety net for the WebP images.
 
-   The six custom photographs ship as WebP because they are photographs and PNG
-   was the wrong container for them: 4.61MB as PNG against 0.59MB as WebP, which
-   was the largest single reason the page was slow to show its images on a phone.
-   The original PNGs are still in the repo, so if a WebP ever fails to load — an
+   Every image on the page ships as WebP rather than PNG, which is simply the
+   wrong container for photographs and for the large soft-gradient artwork Canva
+   exported. The six custom photographs go 4.61MB -> 0.59MB, and Canva's own
+   media 14.25MB -> 3.46MB. That is far and away the biggest reason the page was
+   slow to show anything on a phone: the paper texture alone, painted by every
+   section, was 1.68MB and is 27KB as WebP.
+
+   Every original PNG is still in the repo, so if a WebP ever fails to load — an
    old browser, a bad transfer, some behaviour of Canva's runtime not anticipated
-   here — fall straight back to the PNG rather than leaving a hole where a photo
-   should be.
+   here — fall straight back to the PNG rather than leaving a hole in the page.
 
    Capture phase, because "error" from an <img> does not bubble. */
 (function () {
@@ -60,7 +63,8 @@
     var el = e && e.target;
     if (!el || el.tagName !== "IMG") return;
     var src = el.getAttribute("src") || "";
-    if (src.indexOf("custom/") === -1 || src.indexOf(".webp") === -1) return;
+    if (src.indexOf(".webp") === -1) return;
+    if (src.indexOf("custom/") === -1 && src.indexOf("media/") === -1) return;
     if (el.__webpFellBack) return;   // only ever swap once
     el.__webpFellBack = true;
     el.src = src.replace(/\.webp(\?|$)/, ".png$1");
