@@ -180,6 +180,49 @@
     return null;
   }
 
+  function ensureDateLine(section, key, text, anchor, centerX, scale) {
+    // The wedding and the reception fall on different days — 24 and 26 August —
+    // but Canva's design carries one date, in the hero, and each event section
+    // shows only a time. Without a date beside each time a guest reading the
+    // ceremony section has no way to know it is not on the headline date.
+    //
+    // This is a new element rather than an edit to Canva's own text, and that
+    // is deliberate. Folding the date into the time string ("24 Aug · 2:00 PM")
+    // was tried first and broke the section: once the text is long enough to
+    // wrap, Canva splits it into one text node per line, textEls() matches a
+    // single text node and so found nothing, and patch() bailed out entirely —
+    // taking the map button, the venue photo and the time's decorative font
+    // with it. Owning the element outright avoids every one of those couplings.
+    if (!section || !anchor) return;
+    var el = section.querySelector('[data-custom-clone="' + key + '"]');
+    if (!el || !el.isConnected) {
+      el = document.createElement("div");
+      el.setAttribute("data-custom-clone", key);
+      el.style.position = "absolute";
+      el.style.top = "0";
+      el.style.left = "0";
+      section.appendChild(el);
+    }
+    if (el.textContent !== text) el.textContent = text;
+
+    var m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(anchor.style.transform || "");
+    if (!m) return;
+    var ay = parseFloat(m[2]);
+    var ah = parseFloat(anchor.style.height);
+    if (!(ah > 0) || !isFinite(centerX)) return;
+
+    var w = 900 * scale;
+    el.style.width = w + "px";
+    el.style.textAlign = "center";
+    el.style.whiteSpace = "nowrap";
+    el.style.fontFamily = "YADSvvPAniY_0, auto";
+    el.style.fontSize = 44 * scale + "px";
+    el.style.lineHeight = 1.2;
+    el.style.color = "rgb(64, 64, 64)";
+    el.style.transform =
+      "translate(" + (centerX - w / 2) + "px, " + (ay + ah + 14 * scale) + "px)";
+  }
+
   function makeButton(href, label, scale) {
     // Canva's own "Open map" pill is an SVG shape (with its own <clipPath>
     // ids) layered behind plain text. Cloning that whole structure ran into
@@ -287,12 +330,29 @@
     }
     if (venueWrapper) venueWrapper.remove();
 
-    // 2. Restyle "6:30 PM" to match the ceremony's big decorative time font.
+    // 2. Restyle the reception time to match the ceremony's big decorative font.
     var timeP = timeWrapper.querySelector("p");
     var sourceP = ceremonyTimeWrapper.querySelector("p");
     if (timeP && sourceP) timeP.setAttribute("style", sourceP.getAttribute("style"));
     timeWrapper.style.height = 115 * scale + "px";
     timeWrapper.style.width = 700 * scale + "px";
+
+    // 2b. A date beside each time, since the two events are on different days.
+    //     The ceremony's line is centred on its own time box; the reception's
+    //     on the "Reception" heading, the same anchor its photo and map button
+    //     already use — its time box is deliberately left off-centre by the
+    //     width it is given above.
+    var ceremonyTimeX = /translate\(([-\d.]+)px/.exec(ceremonyTimeWrapper.style.transform || "");
+    if (ceremonyTimeX) {
+      ensureDateLine(
+        ceremonyTimeWrapper.parentNode, "ceremony-date", "24 August 2026",
+        ceremonyTimeWrapper,
+        parseFloat(ceremonyTimeX[1]) + parseFloat(ceremonyTimeWrapper.style.width) / 2,
+        scale
+      );
+    }
+    ensureDateLine(receptionSection, "reception-date", "26 August 2026",
+                   timeWrapper, headingCenterX, scale);
 
     // 3. Clone the ceremony's photo block into the reception section (for its
     //    position/rotation/frame styling), then swap in the real photos for
