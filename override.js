@@ -180,6 +180,28 @@
     return null;
   }
 
+  function boxIn(section, el) {
+    // An element's rendered box expressed in `section`'s own coordinate space —
+    // the space Canva's translate() uses for absolutely positioned children.
+    //
+    // Everything that positions the date lines goes through this, because
+    // mixing the two spaces is what broke the first two attempts: style.height
+    // and style.width are in Canva's DESIGN units (the time box declares 89)
+    // while translate() is in rendered pixels (that same box is 26 tall on a
+    // phone), and adding one to the other put the date 145px too low, straight
+    // through the photo.
+    if (!section || !el) return null;
+    var s = section.getBoundingClientRect();
+    var r = el.getBoundingClientRect();
+    if (!(r.width > 0) && !(r.height > 0)) return null;
+    return {
+      top: r.top - s.top,
+      bottom: r.bottom - s.top,
+      height: r.height,
+      centerX: (r.left + r.width / 2) - s.left
+    };
+  }
+
   function ensureDateLine(section, key, text, anchor, centerX, scale) {
     // The wedding and the reception fall on different days — 24 and 26 August —
     // but Canva's design carries one date, in the hero, and each event section
@@ -205,22 +227,76 @@
     }
     if (el.textContent !== text) el.textContent = text;
 
-    var m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(anchor.style.transform || "");
-    if (!m) return;
-    var ay = parseFloat(m[2]);
-    var ah = parseFloat(anchor.style.height);
-    if (!(ah > 0) || !isFinite(centerX)) return;
+    // Sized from the time's own rendered text so the date is always a fixed
+    // fraction of it, at any breakpoint, rather than from a design-space
+    // constant that would need its own scale conversion.
+    var a = boxIn(section, anchor);
+    if (!a || !(a.height > 0) || !isFinite(centerX)) return;
 
-    var w = 900 * scale;
+    var fs = Math.max(11, a.height * 0.46);
+    var w = section.getBoundingClientRect().width * 0.9;
     el.style.width = w + "px";
     el.style.textAlign = "center";
     el.style.whiteSpace = "nowrap";
     el.style.fontFamily = "YADSvvPAniY_0, auto";
-    el.style.fontSize = 44 * scale + "px";
+    el.style.fontSize = fs + "px";
     el.style.lineHeight = 1.2;
     el.style.color = "rgb(64, 64, 64)";
     el.style.transform =
-      "translate(" + (centerX - w / 2) + "px, " + (ay + ah + 14 * scale) + "px)";
+      "translate(" + (centerX - w / 2) + "px, " + (a.bottom + fs * 0.35) + "px)";
+  }
+
+  function shiftDownOnce(el, delta) {
+    // Idempotent: patch() runs every tick, so the shift already applied is
+    // remembered and the element is moved relative to its ORIGINAL y, never
+    // relative to wherever the last tick left it. Without that it would creep
+    // down the page a little further every 300ms.
+    if (!el) return;
+    var applied = parseFloat(el.getAttribute("data-date-shift") || "0");
+    if (Math.abs(applied - delta) < 0.5) return;
+    var m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(el.style.transform || "");
+    if (!m) return;
+    var baseY = parseFloat(m[2]) - applied;
+    el.style.transform = el.style.transform.replace(
+      /translate\([-\d.]+px,\s*[-\d.]+px\)/,
+      "translate(" + parseFloat(m[1]) + "px, " + (baseY + delta) + "px)"
+    );
+    el.setAttribute("data-date-shift", String(delta));
+  }
+
+  function makeRoomForDateLine(section, dateEl, blockers, clearance) {
+    if (!section || !dateEl) return;
+    var d = boxIn(section, dateEl);
+    if (!d || !(d.height > 0)) return;
+
+    // How far the things below the date must move for it to clear them,
+    // measured against where each would sit UNSHIFTED so the answer is the same
+    // on every tick instead of compounding its own last correction.
+    var need = 0;
+    for (var i = 0; i < blockers.length; i++) {
+      var b = blockers[i];
+      if (!b) continue;
+      var r = boxIn(section, b);
+      if (!r) continue;
+      var applied = parseFloat(b.getAttribute("data-date-shift") || "0");
+      // Skip only what finishes above the date. Testing the blocker's TOP was
+      // wrong: the photo's wrapper carries its tilted frame and shadow, so it
+      // starts a few pixels higher than the date even while overlapping it.
+      if (r.bottom - applied <= d.top) continue;
+      need = Math.max(need, d.bottom + clearance - (r.top - applied));
+    }
+    need = Math.max(0, Math.round(need));
+
+    for (var j = 0; j < blockers.length; j++) shiftDownOnce(blockers[j], need);
+
+    // Grow the section to match, or the button is pushed out through the
+    // bottom edge. The base is captured once, before anything has moved.
+    var base = parseFloat(section.getAttribute("data-base-height") || "0");
+    if (!base) {
+      base = section.getBoundingClientRect().height;
+      section.setAttribute("data-base-height", String(base));
+    }
+    section.style.minHeight = (base + need) + "px";
   }
 
   function makeButton(href, label, scale) {
@@ -342,17 +418,31 @@
     //     on the "Reception" heading, the same anchor its photo and map button
     //     already use — its time box is deliberately left off-centre by the
     //     width it is given above.
-    var ceremonyTimeX = /translate\(([-\d.]+)px/.exec(ceremonyTimeWrapper.style.transform || "");
-    if (ceremonyTimeX) {
-      ensureDateLine(
-        ceremonyTimeWrapper.parentNode, "ceremony-date", "24 August 2026",
-        ceremonyTimeWrapper,
-        parseFloat(ceremonyTimeX[1]) + parseFloat(ceremonyTimeWrapper.style.width) / 2,
-        scale
-      );
+    var ceremonySection = ceremonyTimeWrapper.parentNode;
+    var ceremonyTimeBox = boxIn(ceremonySection, ceremonyTimeWrapper);
+    var receptionHeadingBox = boxIn(receptionSection, headingWrapper);
+    if (ceremonyTimeBox) {
+      ensureDateLine(ceremonySection, "ceremony-date", "24 August 2026",
+                     ceremonyTimeWrapper, ceremonyTimeBox.centerX, scale);
     }
-    ensureDateLine(receptionSection, "reception-date", "26 August 2026",
-                   timeWrapper, headingCenterX, scale);
+    if (receptionHeadingBox) {
+      ensureDateLine(receptionSection, "reception-date", "26 August 2026",
+                     timeWrapper, receptionHeadingBox.centerX, scale);
+    }
+
+    //     Canva packs this section tightly — on a 375px phone there are 9px
+    //     between the address and the time and 22px between the time and the
+    //     photo — so the ceremony's date landed on the photo's white frame with
+    //     a pearl in the gap. Make room by moving the photo and its button down
+    //     by however much is actually needed, measured rather than assumed so it
+    //     holds at every breakpoint, and grow the section to match so the shift
+    //     does not push the button out of the bottom.
+    makeRoomForDateLine(
+      ceremonyTimeWrapper.parentNode,
+      ceremonyTimeWrapper.parentNode.querySelector('[data-custom-clone="ceremony-date"]'),
+      [photoWrapper, mapWrapper],
+      18 * scale
+    );
 
     // 3. Clone the ceremony's photo block into the reception section (for its
     //    position/rotation/frame styling), then swap in the real photos for
@@ -365,6 +455,9 @@
     if (!photoClone || !photoClone.isConnected) {
       photoClone = photoWrapper.cloneNode(true);
       photoClone.removeAttribute("id");
+      // cloneNode copies the ceremony photo's shift bookkeeping too, which
+      // would make the clone look pre-shifted to any later measurement.
+      photoClone.removeAttribute("data-date-shift");
       photoClone.setAttribute("data-custom-clone", "photo");
       var cloneImg = photoClone.querySelector("img");
       if (cloneImg) cloneImg.src = "_assets/custom/auditorium.webp";
